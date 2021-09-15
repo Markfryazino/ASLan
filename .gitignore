@@ -1,5 +1,7 @@
 data/
+notebooks/
+main.py
 
 .vscode/
 wandb/
-notebooks/
+__pycache__/
