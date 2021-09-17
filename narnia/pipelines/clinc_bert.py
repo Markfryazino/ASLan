@@ -1,5 +1,8 @@
-# This script is a copy of a notebook running in Yandex Datasphere, it won't work from the box
+# This script is a copy of a notebook running in Yandex Datasphere.
+# Thus, I am not sure it will work from the box.
+# Anyway, you need CLINC150:v1 downloaded.
 
+import os
 import numpy as np
 from transformers import BertTokenizerFast
 from datasets import load_dataset, ClassLabel, load_metric
@@ -7,7 +10,7 @@ from datasets import load_dataset, ClassLabel, load_metric
 
 raw = load_dataset("csv", data_files={"train": "artifacts/CLINC150:v1/train.csv",
                                       "val": "artifacts/CLINC150:v1/val.csv",
-                                      "test": "artifacts/CLINC150:v1/test.csv", })
+                                      "test": "artifacts/CLINC150:v1/test.csv"})
 
 no_oos = raw.filter(lambda x: x["intent"] != "oos")
 
@@ -31,7 +34,7 @@ def compute_metrics(eval_pred):
     return metric.compute(predictions=predictions, references=labels)
 
 
-%env WANDB_LOG_MODEL=true
+os.environ["WANDB_LOG_MODEL"] = "true"
 
 import wandb
 from transformers import BertForSequenceClassification, Trainer, TrainingArguments
