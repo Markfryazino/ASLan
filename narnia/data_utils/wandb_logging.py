@@ -1,12 +1,14 @@
 import wandb
 
 
-def log_clinc150(run=None):
+def log_clinc150(run=None, metadata=None):
+    if metadata is None:
+        metadata = {}
     if run is None:
         run = wandb.init(project="aslan", job_type="data-logging",
                          notes="Log another version of CLINC150 dataset")
     my_data = wandb.Artifact("CLINC150", type="dataset", description="Dataset for SLU from [here]"
-                            "(https://github.com/clinc/oos-eval)")
+                            "(https://github.com/clinc/oos-eval)", metadata=metadata)
 
     my_data.add_dir("data/oos-eval/data")
     run.log_artifact(my_data)

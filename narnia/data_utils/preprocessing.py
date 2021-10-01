@@ -178,3 +178,42 @@ def add_label_idxs_to_clinc150():
     run.log_artifact(my_data)
 
     wandb.finish()
+
+def split_clinc150_for_zero_shot():
+    run = wandb.init(project="aslan", job_type="data-preprocessing",
+                     notes="Split CLINC150 datasets into seen and unseen intents for zero shot")
+    run.use_artifact("CLINC150:latest")
+
+    train = pd.read_csv("data/oos-eval/data/train.csv")
+    val = pd.read_csv("data/oos-eval/data/val.csv")
+    test = pd.read_csv("data/oos-eval/data/test.csv")
+
+    all_intents = train["intent"].unique().tolist()
+    seen_intents = np.random.choice(all_intents, 112, replace=False).tolist()
+    unseen_intents = list(set(all_intents) - set(seen_intents))
+
+    metadata = {
+        "seen_intents": seen_intents,
+        "unseen_intents": unseen_intents
+    }
+
+    dataset = {
+        "seen": {
+            "train": train[train["intent"].isin(seen_intents)],
+            "val": val[val["intent"].isin(seen_intents)],
+            "test": test[test["intent"].isin(seen_intents)]
+        },
+        "unseen": {
+            "train": train[train["intent"].isin(unseen_intents)],
+            "val": val[val["intent"].isin(unseen_intents)],
+            "test": test[test["intent"].isin(unseen_intents)]
+        }
+    }
+
+    split_path = "data/oos-eval/data/zero_shot_split"
+    Path(split_path).mkdir(parents=True, exist_ok=True)
+    for dkey, dval in dataset.items():
+        for skey, sval in dval.items():
+            sval.to_csv(f"{split_path}/{dkey}_{skey}.csv", index=False)
+
+    log_clinc150(run, metadata=metadata)
