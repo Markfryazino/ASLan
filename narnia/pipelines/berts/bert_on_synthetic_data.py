@@ -7,8 +7,6 @@ Original file is located at
     https://colab.research.google.com/drive/1COHYZPOjsy2dd63AGker2YqIIm6_vSAm
 """
 
-!pip install transformers datasets wandb --upgrade
-
 import wandb
 import numpy as np
 import torch
