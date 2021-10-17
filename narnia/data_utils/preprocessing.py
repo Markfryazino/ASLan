@@ -2,12 +2,13 @@ import wandb
 import json
 import pandas as pd
 import numpy as np
+import os
 
 from pathlib import Path
 from transformers import BertTokenizerFast
 from datasets import load_dataset, ClassLabel, load_metric
 
-from .wandb_logging import log_clinc150
+from .wandb_logging import log_clinc150, log_snips
 
 
 def refactor_clinc150():
@@ -217,3 +218,32 @@ def split_clinc150_for_zero_shot():
             sval.to_csv(f"{split_path}/{dkey}_{skey}.csv", index=False)
 
     log_clinc150(run, metadata=metadata)
+
+
+def refactor_snips():
+    def dict_to_df(d, intent):
+        res = []
+        for example in d[intent]:
+            res.append("".join([el["text"] for el in example["data"]]).lower())
+        return pd.DataFrame({"intent": [intent] * len(res), "text": res})
+
+    run = wandb.init(project="aslan", job_type="data-preprocessing",
+                     notes="Refactor SNIPS dataset")
+    run.use_artifact("SNIPS:latest")
+
+    train = pd.DataFrame()
+    val = pd.DataFrame()
+
+    for intent in os.listdir("data/nlu-benchmark/2017-06-custom-intent-engines/")[:-1]:
+        with open(f"data/nlu-benchmark/2017-06-custom-intent-engines/{intent}/train_{intent}_full.json") as f:
+            trainj = json.load(f)
+        with open(f"data/nlu-benchmark/2017-06-custom-intent-engines/{intent}/validate_{intent}.json") as f:
+            valj = json.load(f)
+            
+        train = train.append(dict_to_df(trainj, intent))
+        val = val.append(dict_to_df(valj, intent))
+
+    train.to_csv("data/nlu-benchmark/2017-06-custom-intent-engines/train.csv", index=False)
+    val.to_csv("data/nlu-benchmark/2017-06-custom-intent-engines/test.csv", index=False)
+
+    log_snips(run)
