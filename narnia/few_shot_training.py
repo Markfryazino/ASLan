@@ -13,11 +13,14 @@ from environment import FewShotHandler, TokenizedDataset, UIDataset, UUDataset
 
 
 ACCURACY = load_metric("accuracy")
+PRECISION = load_metric("precision")
+RECALL = load_metric("recall")
+F1 = load_metric("f1")
 
 COMMON_ARGS = {
     "per_device_train_batch_size": 32,
     "per_device_eval_batch_size": 64,
-    "max_steps": 150,
+    "num_train_epochs": 5,
     "learning_rate": 2e-5,
     "warmup_steps": 0,
     "weight_decay": 0.01,
@@ -28,24 +31,27 @@ COMMON_ARGS = {
     "gradient_accumulation_steps": 1,
     "output_dir": "./results",
     "evaluation_strategy": "steps",
-    "eval_steps": 10,
+    "eval_steps": 200,
     "logging_dir": "./logs",
     "logging_steps": 10,
     "report_to": "wandb",
     "save_strategy": "steps",
-    "save_steps": 10,
+    "save_steps": 200,
     "save_total_limit": 5,
     "load_best_model_at_end": True,
-    "metric_for_best_model": "accuracy",
+    "metric_for_best_model": "f1",
     "greater_is_better": True,
-    "disable_tqdm": True
+    "disable_tqdm": False
 }
 
 
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
     predictions = np.argmax(logits, axis=-1)
-    return ACCURACY.compute(predictions=predictions, references=labels)
+    metric_dict = {}
+    for metric in [ACCURACY, PRECISION, RECALL, F1]:
+        metric_dict.update(metric.compute(predictions=predictions, references=labels))
+    return metric_dict
 
 
 def model_finetuning(model, tokenizer, fshandler, setup_function, use_artifacts, wandb_tags, 
@@ -59,7 +65,7 @@ def model_finetuning(model, tokenizer, fshandler, setup_function, use_artifacts,
     os.environ["WANDB_LOG_MODEL"] = str(log_model).lower()
 
     collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
-    model, support_set, test_set = setup_bert(model, tokenizer, fshandler, params)
+    model, support_set, test_set = setup_function(model, tokenizer, fshandler, params)
     
     run = wandb.init(project="aslan", tags=wandb_tags, job_type="training", group=wandb_group)
 
@@ -115,25 +121,30 @@ def setup_entailment_roberta(roberta, tokenizer, fshandler, params):
     support_ui = UIDataset(fshandler.known, fshandler.intents)
     test_ui = UIDataset(fshandler.unknown, fshandler.intents)
 
-    separator = "<sep>"
-    if "separator" in params:
-        separator = params["separator"]
+    if "separator" not in params:
+        params["separator"] = "<sep>"
+    if "test_size" not in params:
+        params["test_size"] = None
 
-    support_set = TokenizedDataset(support_ui, lambda x: x["text"] + separator + x["intent"], tokenizer)
-    test_set = TokenizedDataset(test_ui, lambda x: x["text"] + separator + x["intent"], tokenizer)
+    support_set = TokenizedDataset(support_ui, lambda x: x["text"] + params["separator"] + x["intent"], tokenizer)
+    test_set = TokenizedDataset(test_ui, lambda x: x["text"] + params["separator"] + x["intent"],
+                                tokenizer, sample_size=params["test_size"])
 
     return roberta, support_set, test_set
 
 
 def setup_knn_roberta(roberta, tokenizer, fshandler, params):
-    support_ui = UUDataset(fshandler.known, fshandler.known)
-    test_ui = UUDataset(fshandler.unknown, fshandler.known)
+    support_uu = UUDataset(fshandler.known, fshandler.known)
+    test_uu = UUDataset(fshandler.unknown, fshandler.known)
 
-    separator = "<sep>"
-    if "separator" in params:
-        separator = params["separator"]
+    if "separator" not in params:
+        params["separator"] = "<sep>"
+    if "test_size" not in params:
+        params["test_size"] = None
 
-    support_set = TokenizedDataset(support_ui, lambda x: x["text_known"] + separator + x["text_unknown"], tokenizer)
-    test_set = TokenizedDataset(test_ui, lambda x: x["text_known"] + separator + x["text_unknown"], tokenizer)
+    support_set = TokenizedDataset(support_uu, lambda x: x["text_known"] + \
+                                   params["separator"] + x["text_unknown"], tokenizer)
+    test_set = TokenizedDataset(test_uu, lambda x: x["text_known"] + \
+                                params["separator"] + x["text_unknown"], tokenizer, sample_size=params["test_size"])
 
     return roberta, support_set, test_set

@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import json
 from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concatenate_datasets
+from transformers import DataCollatorWithPadding
 import os
 import pandas as pd
 from tqdm.auto import tqdm, trange
@@ -90,16 +91,23 @@ class UUDataset(torch.utils.data.Dataset):
 
     
 class TokenizedDataset(torch.utils.data.Dataset):
-    def __init__(self, source_dataset, builder, tokenizer):
+    def __init__(self, source_dataset, builder, tokenizer, sample_size=None):
         self.source = source_dataset
         self.builder = builder
         self.tokenizer = tokenizer
+
+        if type(sample_size) == float:
+            sample_size = int(sample_size * len(self.source))
+        self.sample_size = sample_size if sample_size is not None else len(self.source)
+        self.use_idxs = np.arange(len(self.source))
+        if self.sample_size < len(self.source):
+            self.use_idxs = np.random.choice(len(self.source), self.sample_size, replace=False)
     
     def __len__(self):
-        return len(self.source)
+        return self.sample_size
     
     def __getitem__(self, idx):
-        source_example = self.source[idx]
+        source_example = self.source[int(self.use_idxs[idx])]
         tokenized = self.tokenizer(self.builder(source_example))
         if "label" in source_example:
             tokenized.update({"label": source_example["label"]})
@@ -139,7 +147,8 @@ class FewShotHandler():
         collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
         tokenized_dataset = TokenizedDataset(self.ui_dataset, lambda x: x["text"] + separator + x["intent"], tokenizer)
         
-        loader = torch.utils.data.DataLoader(tokenized_dataset, batch_size=batch_size, shuffle=False, collate_fn=collator)
+        loader = torch.utils.data.DataLoader(tokenized_dataset, batch_size=batch_size,
+                                             shuffle=False, collate_fn=collator)
         
         model.to(self.device)
         model.eval()
