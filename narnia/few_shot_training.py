@@ -63,6 +63,7 @@ def model_finetuning(model, tokenizer, fshandler, setup_function, use_artifacts,
     
     run = wandb.init(project="aslan", tags=wandb_tags, job_type="training", group=wandb_group)
 
+    num_labels = fshandler.intent_num
     wandb.config["support_size"] = len(support_set) / num_labels
     wandb.config["num_labels"] = num_labels
 
@@ -70,7 +71,8 @@ def model_finetuning(model, tokenizer, fshandler, setup_function, use_artifacts,
         run.use_artifact(artifact)
         run.use_artifact(artifact)
 
-    settings = COMMON_ARGS.copy().update(params["training"])
+    settings = COMMON_ARGS.copy()
+    settings.update(params["training"])
 
     trainer = Trainer(
         model=model,

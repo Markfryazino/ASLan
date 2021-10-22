@@ -8,6 +8,19 @@ import pandas as pd
 from tqdm.auto import tqdm, trange
 
 
+
+def load_from_memory(root_path="artifacts/CLINC150:v4/zero_shot_split"):
+    splits = []
+    for part in ["train", "val", "test"]:
+        for see in ["seen", "unseen"]:
+            splits.append(f"{see}_{part}")
+
+    raw = load_dataset("csv", data_files={el: os.path.join(root_path, el + ".csv") for el in splits})
+    raw = raw.filter(lambda x: x["intent"] != "oos")
+    raw_unseen = concatenate_datasets([raw["unseen_train"], raw["unseen_val"], raw["unseen_test"]])
+    return raw, raw_unseen
+
+
 def set_generator(dataset, support_size=10, shuffle=True):
     unique_intents = dataset.unique("intent")
     full_intents = np.array(dataset["intent"])
@@ -101,10 +114,10 @@ class FewShotHandler():
         self.intents = self.unknown.unique("intent")
         self.intent_num = len(self.intents)
         self.intent2label = {intent: label for label, intent in enumerate(self.intents)}
-        self.unknown = self.unknown.map(lambda x: encode_example(x, self.intent2label), batched=True)
+        self.unknown = self.unknown.map(lambda x: encode_example(x, self.intent2label), batched=False)
 
         if known is not None:
-            self.known = self.known.map(lambda x: encode_example(x, self.intent2label), batched=True)
+            self.known = self.known.map(lambda x: encode_example(x, self.intent2label), batched=False)
 
             known_intents_array = np.array(known["intent"])
             self.known_intent_idxs = {}
