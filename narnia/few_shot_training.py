@@ -70,7 +70,7 @@ def model_finetuning(model, tokenizer, fshandler, setup_function, use_artifacts,
     run = wandb.init(project="aslan", tags=wandb_tags, job_type="training", group=wandb_group)
 
     num_labels = fshandler.intent_num
-    wandb.config["support_size"] = len(support_set) / num_labels
+    wandb.config["support_size"] = len(fshandler.known) / num_labels
     wandb.config["num_labels"] = num_labels
 
     for artifact in use_artifacts:
@@ -127,6 +127,14 @@ def setup_entailment_roberta(roberta, tokenizer, fshandler, params):
         params["test_size"] = None
 
     support_set = TokenizedDataset(support_ui, lambda x: x["text"] + params["separator"] + x["intent"], tokenizer)
+
+    if "fake_data" in params:
+        fake_data = params["fake_data"].map(lambda x: {"label": 0, "generated": x["generated"], \
+                                                       "intent": x["intent"]})
+        fake_data = TokenizedDataset(fake_data, lambda x: x["generated"] + params["separator"] + x["intent"],
+                                     tokenizer)
+        support_set = torch.utils.data.ConcatDataset([support_set, fake_data])
+
     test_set = TokenizedDataset(test_ui, lambda x: x["text"] + params["separator"] + x["intent"],
                                 tokenizer, sample_size=params["test_size"])
 

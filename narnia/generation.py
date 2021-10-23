@@ -12,10 +12,9 @@ def get_gpt(gpt_path):
     gpt_tokenizer = GPT2Tokenizer.from_pretrained('gpt2', truncation=True, padding=True)
     gpt_tokenizer.add_special_tokens({"sep_token": "<sep>", "pad_token": "<pad>","bos_token": "<start>", 
                                       "eos_token": "<end>", "unk_token": "<unk>"})
-    gpt_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-    gpt = GPT2LMHeadModel.from_pretrained("artifacts/hard-negatives-gpt2:v0").cuda()
-    gpt.resize_token_embeddings(len(tokenizer))
+    gpt = GPT2LMHeadModel.from_pretrained(gpt_path).cuda()
+    gpt.resize_token_embeddings(len(gpt_tokenizer))
     return gpt, gpt_tokenizer
 
 
@@ -27,8 +26,8 @@ def generate_hard_negative(model, tokenizer, example):
         try:
             generated = model.generate(
                 input_ids,
-                pad_token_id=gpt_tokenizer.pad_token_id,
-                eos_token_id=gpt_tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
                 max_length=50,
                 do_sample=True,
                 temperature=.8
@@ -46,4 +45,4 @@ def synthesize_hard_negatives(dataset, model, tokenizer, ratio=1):
     for i in range(ratio):
         fakes.append(dataset.map(lambda x: generate_hard_negative(model, tokenizer, x)))
     
-    return concatenate_datasets([dataset] + [fakes]).shuffle()
+    return concatenate_datasets(fakes).shuffle()

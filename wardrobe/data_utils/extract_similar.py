@@ -32,7 +32,7 @@ dataset = dataset.map(encode_label)
 ​
 embedder = SentenceTransformer('paraphrase-MiniLM-L6-v2').cuda()
 ​
-def embed(x):
+def embed(x):   
     x["embedding"] = embedder.encode(x["text"])
     return x
 
