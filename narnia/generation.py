@@ -7,6 +7,7 @@ from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concate
 import os
 import pandas as pd
 import random
+from tqdm.auto import tqdm, trange
 
 
 GENERATION_ARGS = {
@@ -39,8 +40,7 @@ GENERATION_ARGS = {
 def get_gpt(gpt_path):
     gpt_tokenizer = GPT2Tokenizer.from_pretrained('gpt2', truncation=True, padding=True)
     gpt_tokenizer.add_special_tokens({"sep_token": "<sep>", "pad_token": "<pad>","bos_token": "<start>", 
-                                      "eos_token": "<end>", "unk_token": "<unk>", "ep_token": "<ep>",
-                                      "en_token": "<en>", "hp_token": "<hp>", "hn_token": "<hn>"})
+                                      "eos_token": "<end>", "unk_token": "<unk>"})
 
     gpt = GPT2LMHeadModel.from_pretrained(gpt_path).cuda()
     gpt.resize_token_embeddings(len(gpt_tokenizer))
@@ -77,11 +77,14 @@ def synthesize_hard_negatives(dataset, model, tokenizer, ratio=1):
     return concatenate_datasets(fakes).shuffle()
 
 
+#!g1.1
 class GenerationTypedDataset(torch.utils.data.Dataset):
     def __init__(self, source_dataset, distances, hard_num=5, ratios=None):
         self.source = source_dataset
         self.distances = distances
         self.n = len(source_dataset)
+        self.intents = self.source.unique("intent")
+        self.n_intents = len(self.intents)
         self.ratios = ratios
         if self.ratios is None:
             self.ratios = {
@@ -91,6 +94,33 @@ class GenerationTypedDataset(torch.utils.data.Dataset):
                 "hn": 1
             }
         self.hard_num = hard_num
+
+        self.idxs_to_choose = {
+            "ep": np.zeros((self.n, self.n // self.n_intents), dtype=int),
+            "en": np.zeros((self.n, self.n * (self.n_intents - 1) // self.n_intents), dtype=int),
+            "hp": np.zeros((self.n, self.hard_num), dtype=int),
+            "hn": np.zeros((self.n, self.hard_num), dtype=int),
+        }
+
+        self.source = self.source.map(lambda x, idx: {"index": idx, **x}, with_indices=True)
+        
+        for intent in tqdm(self.intents):
+            nice_guys = self.source.filter(lambda x: x["intent"] == intent)
+            bad_guys = self.source.filter(lambda x: x["intent"] != intent)
+            nice_guys_idx = np.array(nice_guys["index"])
+            bad_guys_idx = np.array(bad_guys["index"])
+
+            self.idxs_to_choose["ep"][nice_guys["index"]] = nice_guys["index"]
+            self.idxs_to_choose["en"][nice_guys["index"]] = bad_guys["index"]
+
+            inside_dists = self.distances[nice_guys["index"]][:,nice_guys["index"]]
+            hard_idxs = np.argpartition(inside_dists, -self.hard_num)[:,-self.hard_num:]
+            
+            self.idxs_to_choose["hp"][nice_guys["index"]] = nice_guys_idx[hard_idxs]
+
+            outside_dists = self.distances[nice_guys["index"]][:,bad_guys["index"]]
+            hard_idxs = np.argpartition(outside_dists, self.hard_num)[:,:self.hard_num]
+            self.idxs_to_choose["hn"][nice_guys["index"]] = bad_guys_idx[hard_idxs]
     
     def __len__(self):
         return self.n * sum(self.ratios.values())
@@ -98,31 +128,19 @@ class GenerationTypedDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         item_idx = idx % self.n
         state = idx // self.n
-        anchor = self.source[item_idx]
-        to_choose, mode = None, None
+        mode = None
         if state < self.ratios["ep"]:
-            to_choose = self.source.filter(lambda x: x["intent"] == anchor["intent"])
             mode = "ep"
         elif state < self.ratios["ep"] + self.ratios["en"]:
-            to_choose = self.source.filter(lambda x: x["intent"] != anchor["intent"])
             mode = "en"
         elif state < self.ratios["ep"] + self.ratios["en"] + self.ratios["hp"]:
-            with_dists = self.source.map(lambda x, idx: {"distance": self.distances[item_idx, idx], **x},
-                                         with_indices=True).filter(lambda x: x["intent"] == anchor["intent"])
-            best_idxs = np.argpartition(with_dists["distance"], self.hard_num)[:self.hard_num]
-            to_choose = with_dists.select(best_idxs)
             mode = "hp"
         else:
-            with_dists = self.source.map(lambda x, idx: {"distance": self.distances[item_idx, idx], **x},
-                                         with_indices=True).filter(lambda x: x["intent"] != anchor["intent"])
-            best_idxs = np.argpartition(with_dists["distance"], -self.hard_num)[:-self.hard_num]
-            to_choose = with_dists.select(best_idxs)
             mode = "hn"
         
-        other_idx = random.randint(0, len(to_choose))
-        other = self.source[other_idx]
+        other_idx = random.choice(self.idxs_to_choose[mode][item_idx])
         return {
             "source": self.source[item_idx],
-            "other": self.source[other_idx],
+            "other": self.source[int(other_idx)],
             "mode": mode
         }
