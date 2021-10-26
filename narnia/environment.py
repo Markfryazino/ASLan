@@ -1,12 +1,15 @@
 import wandb
 import numpy as np
+import scipy
 import torch
 import json
 from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concatenate_datasets
 from transformers import DataCollatorWithPadding
+from sentence_transformers import SentenceTransformer
 import os
 import pandas as pd
 from tqdm.auto import tqdm, trange
+import logging
 
 
 
@@ -89,6 +92,43 @@ class UUDataset(torch.utils.data.Dataset):
             "label": int(self.unknown[un_id]["intent"] == self.known[kn_id]["intent"])
         }
 
+class STUUDataset(torch.utils.data.Dataset):
+    def __init__(self, known, unknown, sbert, top_k=10, device="cuda"):
+        self.known = known
+        self.unknown = unknown
+        self.top_k = top_k
+        self.n = len(unknown)
+        self.m = len(known)
+
+        if sbert is None:
+            logging.info("Parameter sbert is None, initializing as 'all-mpnet-base-v2'")
+            sbert = SentenceTransformer('all-mpnet-base-v2').to(device)
+        elif type(sbert) is str:
+            sbert = SentenceTransformer(sbert).to(device)
+    
+        logging.debug("Encoding known dataset using SBERT...")
+        encoded_known = sbert.encode(self.known["text"])
+
+        logging.debug("Encoding unknown dataset using SBERT...")
+        encoded_unknown = sbert.encode(self.unknown["text"])
+
+        logging.debug("Counting distance")
+        un2kn = scipy.spatial.distance.cdist(encoded_unknown, encoded_known, metric="cosine")
+        
+        self.close_idxs = np.argpartition(un2kn, self.top_k)[:,:self.top_k]
+
+    def __len__(self):
+        return self.n * self.top_k
+    
+    def __getitem__(self, idx):
+        un_id = idx // self.top_k
+        kn_id = int(self.close_idxs[un_id, idx % self.top_k])
+        return {
+            "text_unknown": self.unknown[un_id]["text"],
+            "text_known": self.known[kn_id]["text"],
+            "label": int(self.unknown[un_id]["intent"] == self.known[kn_id]["intent"])
+        }
+
     
 class TokenizedDataset(torch.utils.data.Dataset):
     def __init__(self, source_dataset, builder, tokenizer, sample_size=None):
@@ -142,6 +182,8 @@ class FewShotHandler():
         self.ui_dataset = UIDataset(self.unknown, self.intents)
         self.device = device
 
+        self.stuu_dataset = None
+
     def eval_ui(self, model, tokenizer, batch_size=64, separator="<sep>"):
 
         collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
@@ -167,17 +209,18 @@ class FewShotHandler():
             correct += self.ui_dataset[idx + current_prediction.item()]["label"]
         return {"accuracy": correct / len(self.unknown)}
     
-    def eval_uu(self, model, tokenizer, batch_size=64, separator="<sep>"):
+    def eval_as_1nn(self, model, tokenizer, dataset, batch_size, separator):
 
         collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
-        tokenized_dataset = TokenizedDataset(self.uu_dataset, lambda x: x["text_unknown"] + \
+        tokenized_dataset = TokenizedDataset(dataset, lambda x: x["text_unknown"] + \
                                              separator + x["text_known"], tokenizer)
         
-        loader = torch.utils.data.DataLoader(tokenized_dataset, batch_size=batch_size, shuffle=False, collate_fn=collator)
+        loader = torch.utils.data.DataLoader(tokenized_dataset, batch_size=batch_size, shuffle=False,
+                                             collate_fn=collator)
         
         model.to(self.device)
         model.eval()
-        
+
         with torch.no_grad():
             predictions = []
             for batch in tqdm(loader):
@@ -186,8 +229,34 @@ class FewShotHandler():
                 
         predictions = torch.cat(predictions)[:,1]
         
+        step = len(dataset) // len(self.unknown)
         correct = 0
-        for idx in trange(0, len(self.uu_dataset), len(self.known)):
-            current_prediction = torch.argmax(predictions[idx:idx + len(self.known)])
-            correct += self.uu_dataset[idx + current_prediction.item()]["label"]
-        return {"accuracy": correct / len(self.unknown)}
+
+        details = []
+        for idx in trange(0, len(dataset), step):
+            current_prediction = torch.argmax(predictions[idx:idx + step])
+            correct += dataset[idx + current_prediction.item()]["label"]
+
+            log_idx = idx + current_prediction.item()
+            current_details = {
+                "text_unknown": dataset[log_idx]["text_unknown"],
+                "text_known": dataset[log_idx]["text_known"],
+                "label": dataset[log_idx]["label"],
+                "prediction": predictions[log_idx].item(),
+                "number_of_correct": sum([dataset[i]["label"] for i in range(idx, idx + step)])
+            }
+            details.append(current_details)
+
+        return {"accuracy": correct / len(self.unknown), "details": details}
+
+    def eval_uu(self, model, tokenizer, batch_size=64, separator="<sep>"):
+        return self.eval_as_1nn(model, tokenizer, self.uu_dataset, batch_size, separator)
+
+    def eval_stuu(self, model, tokenizer, sbert=None, top_k=10, batch_size=64, separator="<sep>"):
+        if (self.stuu_dataset is None) or (top_k != self.stuu_dataset.top_k):
+            logging.debug("Reinitializing STUU dataset")
+            self.stuu_dataset = STUUDataset(self.known, self.unknown, sbert, top_k, device=self.device)
+        else:
+            logging.debug("Using cached STUU dataset")
+    
+        return self.eval_as_1nn(model, tokenizer, self.stuu_dataset, batch_size, separator)

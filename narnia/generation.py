@@ -8,6 +8,7 @@ import os
 import pandas as pd
 import random
 from tqdm.auto import tqdm, trange
+import logging
 
 
 GENERATION_ARGS = {
@@ -66,7 +67,7 @@ def generate_hard_negative(model, tokenizer, example):
             example["generated"] = result.split("<sep>")[-1].replace("<end>", "").strip()
             return example
         except:
-            print("Something wrong...")
+            logging.error("Something wrong...")
 
 
 def synthesize_hard_negatives(dataset, model, tokenizer, ratio=1):
