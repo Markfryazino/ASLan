@@ -57,9 +57,10 @@ def model_finetuning(model, tokenizer, fshandler, setup_function, use_artifacts,
                      wandb_group, log_model=False, params=None):
     
     if params is None:
-        params = {
-            "training": {}
-        }
+        params = {}
+
+    if "training" not in params:
+        params["training"] = {}
 
     os.environ["WANDB_LOG_MODEL"] = str(log_model).lower()
 

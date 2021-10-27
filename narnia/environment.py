@@ -11,6 +11,7 @@ import pandas as pd
 from tqdm.auto import tqdm, trange
 import logging
 
+from utils import LOGGING_LEVEL
 
 
 def load_from_memory(root_path="artifacts/CLINC150:v4/zero_shot_split"):
