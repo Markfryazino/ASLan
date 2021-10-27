@@ -9,7 +9,8 @@ from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concate
 import os
 import pandas as pd
 
-from environment import FewShotHandler, TokenizedDataset, UIDataset, UUDataset
+from environment import FewShotHandler, TokenizedDataset, UIDataset, UUDataset, STUUDataset
+from utils import LOGGING_LEVEL
 
 
 ACCURACY = load_metric("accuracy")
@@ -30,13 +31,11 @@ COMMON_ARGS = {
     "adam_beta2": 0.999,
     "gradient_accumulation_steps": 1,
     "output_dir": "./results",
-    "evaluation_strategy": "steps",
-    "eval_steps": 200,
+    "evaluation_strategy": "epoch",
     "logging_dir": "./logs",
     "logging_steps": 10,
     "report_to": "wandb",
-    "save_strategy": "steps",
-    "save_steps": 200,
+    "save_strategy": "epoch",
     "save_total_limit": 5,
     "load_best_model_at_end": True,
     "metric_for_best_model": "f1",
@@ -142,8 +141,14 @@ def setup_entailment_roberta(roberta, tokenizer, fshandler, params):
 
 
 def setup_knn_roberta(roberta, tokenizer, fshandler, params):
-    support_uu = UUDataset(fshandler.known, fshandler.known)
-    test_uu = UUDataset(fshandler.unknown, fshandler.known)
+    support_uu, test_uu = None, None
+    if "top_k" not in params:
+        support_uu = UUDataset(fshandler.known, fshandler.known)
+        test_uu = UUDataset(fshandler.known, fshandler.unknown)
+    else:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        support_uu = STUUDataset(fshandler.known, fshandler.known, top_k=params["top_k"], device=device)
+        test_uu = STUUDataset(fshandler.known, fshandler.unknown, top_k=params["top_k"], device=device)
 
     if "separator" not in params:
         params["separator"] = "<sep>"

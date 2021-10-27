@@ -93,7 +93,7 @@ class UUDataset(torch.utils.data.Dataset):
         }
 
 class STUUDataset(torch.utils.data.Dataset):
-    def __init__(self, known, unknown, sbert, top_k=10, device="cuda"):
+    def __init__(self, known, unknown, sbert=None, top_k=10, device="cuda"):
         self.known = known
         self.unknown = unknown
         self.top_k = top_k
@@ -101,18 +101,18 @@ class STUUDataset(torch.utils.data.Dataset):
         self.m = len(known)
 
         if sbert is None:
-            logging.info("Parameter sbert is None, initializing as 'all-mpnet-base-v2'")
+            logging.log(LOGGING_LEVEL, "Parameter sbert is None, initializing as 'all-mpnet-base-v2'")
             sbert = SentenceTransformer('all-mpnet-base-v2').to(device)
         elif type(sbert) is str:
             sbert = SentenceTransformer(sbert).to(device)
     
-        logging.debug("Encoding known dataset using SBERT...")
+        logging.log(LOGGING_LEVEL, "Encoding known dataset using SBERT...")
         encoded_known = sbert.encode(self.known["text"])
 
-        logging.debug("Encoding unknown dataset using SBERT...")
+        logging.log(LOGGING_LEVEL, "Encoding unknown dataset using SBERT...")
         encoded_unknown = sbert.encode(self.unknown["text"])
 
-        logging.debug("Counting distance")
+        logging.log(LOGGING_LEVEL, "Counting distance")
         un2kn = scipy.spatial.distance.cdist(encoded_unknown, encoded_known, metric="cosine")
         
         self.close_idxs = np.argpartition(un2kn, self.top_k)[:,:self.top_k]
@@ -254,9 +254,9 @@ class FewShotHandler():
 
     def eval_stuu(self, model, tokenizer, sbert=None, top_k=10, batch_size=64, separator="<sep>"):
         if (self.stuu_dataset is None) or (top_k != self.stuu_dataset.top_k):
-            logging.debug("Reinitializing STUU dataset")
+            logging.log(LOGGING_LEVEL, "Reinitializing STUU dataset")
             self.stuu_dataset = STUUDataset(self.known, self.unknown, sbert, top_k, device=self.device)
         else:
-            logging.debug("Using cached STUU dataset")
+            logging.log(LOGGING_LEVEL, "Using cached STUU dataset")
     
         return self.eval_as_1nn(model, tokenizer, self.stuu_dataset, batch_size, separator)
