@@ -3,7 +3,9 @@ import numpy as np
 import random
 import os
 import datetime
+import logging
 
+LOGGING_LEVEL = logging.INFO
 
 def set_random_seed(seed):
     torch.backends.cudnn.deterministic = True
