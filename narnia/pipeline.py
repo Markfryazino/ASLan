@@ -17,8 +17,7 @@ def load_artifacts(artifacts: Dict[str, str]):
     api = wandb.Api()
 
     for val in artifacts.values():
-    artifact = api.artifact(f"broccoliman/aslan/{val}")
-        artifact.download()
+        api.artifact(f"broccoliman/aslan/{val}").download()
 
     logging.debug("stop loading artifacts")
 
