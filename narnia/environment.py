@@ -9,9 +9,6 @@ from sentence_transformers import SentenceTransformer
 import os
 import pandas as pd
 from tqdm.auto import tqdm, trange
-import logging
-
-from utils import LOGGING_LEVEL
 
 
 def load_from_memory(root_path="artifacts/CLINC150:v4/zero_shot_split"):
@@ -94,7 +91,7 @@ class UUDataset(torch.utils.data.Dataset):
         }
 
 class STUUDataset(torch.utils.data.Dataset):
-    def __init__(self, known, unknown, sbert=None, top_k=10, device="cuda"):
+    def __init__(self, known, unknown, logger=print, sbert=None, top_k=10, device="cuda"):
         self.known = known
         self.unknown = unknown
         self.top_k = top_k
@@ -102,18 +99,18 @@ class STUUDataset(torch.utils.data.Dataset):
         self.m = len(known)
 
         if sbert is None:
-            logging.log(LOGGING_LEVEL, "Parameter sbert is None, initializing as 'all-mpnet-base-v2'")
+            logger("Parameter sbert is None, initializing as 'all-mpnet-base-v2'")
             sbert = SentenceTransformer('all-mpnet-base-v2').to(device)
         elif type(sbert) is str:
             sbert = SentenceTransformer(sbert).to(device)
     
-        logging.log(LOGGING_LEVEL, "Encoding known dataset using SBERT...")
+        logger("Encoding known dataset using SBERT...")
         encoded_known = sbert.encode(self.known["text"])
 
-        logging.log(LOGGING_LEVEL, "Encoding unknown dataset using SBERT...")
+        logger("Encoding unknown dataset using SBERT...")
         encoded_unknown = sbert.encode(self.unknown["text"])
 
-        logging.log(LOGGING_LEVEL, "Counting distance")
+        logger("Counting distance")
         un2kn = scipy.spatial.distance.cdist(encoded_unknown, encoded_known, metric="cosine")
         
         self.close_idxs = np.argpartition(un2kn, self.top_k)[:,:self.top_k]
@@ -156,7 +153,7 @@ class TokenizedDataset(torch.utils.data.Dataset):
     
 
 class FewShotHandler():
-    def __init__(self, unknown, known=None, device="cuda"):
+    def __init__(self, unknown, known=None, device="cuda", logger=print):
         self.known = known
         self.unknown = unknown
         
@@ -184,6 +181,13 @@ class FewShotHandler():
         self.device = device
 
         self.stuu_dataset = None
+
+        self.logger = logger
+
+        self.state = {}
+
+    def log(self, text):
+        self.logger(text)
 
     def eval_ui(self, model, tokenizer, batch_size=64, separator="<sep>"):
 
@@ -255,9 +259,9 @@ class FewShotHandler():
 
     def eval_stuu(self, model, tokenizer, sbert=None, top_k=10, batch_size=64, separator="<sep>"):
         if (self.stuu_dataset is None) or (top_k != self.stuu_dataset.top_k):
-            logging.log(LOGGING_LEVEL, "Reinitializing STUU dataset")
+            self.log("Reinitializing STUU dataset")
             self.stuu_dataset = STUUDataset(self.known, self.unknown, sbert, top_k, device=self.device)
         else:
-            logging.log(LOGGING_LEVEL, "Using cached STUU dataset")
+            self.log("Using cached STUU dataset")
     
         return self.eval_as_1nn(model, tokenizer, self.stuu_dataset, batch_size, separator)

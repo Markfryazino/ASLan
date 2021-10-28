@@ -10,7 +10,7 @@ import os
 import pandas as pd
 
 from environment import FewShotHandler, TokenizedDataset, UIDataset, UUDataset, STUUDataset
-from utils import LOGGING_LEVEL
+from wandb_callback import WandbPrefixCallback
 
 
 ACCURACY = load_metric("accuracy")
@@ -75,7 +75,6 @@ def model_finetuning(model, tokenizer, fshandler, setup_function, use_artifacts,
 
     for artifact in use_artifacts:
         run.use_artifact(artifact)
-        run.use_artifact(artifact)
 
     settings = COMMON_ARGS.copy()
     settings.update(params["training"])
@@ -98,6 +97,39 @@ def model_finetuning(model, tokenizer, fshandler, setup_function, use_artifacts,
 
     run.finish()
     return model
+
+
+def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, log_model=False, params=None):
+    if params is None:
+        params = {}
+    if "training" not in params:
+        params["training"] = {}
+
+    os.environ["WANDB_LOG_MODEL"] = str(log_model).lower()
+
+    collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
+    model, support_set, test_set = setup_function(model, tokenizer, fshandler, params)
+    num_labels = fshandler.intent_num
+
+    settings = COMMON_ARGS.copy()
+    settings.update(params["training"])
+
+    trainer = Trainer(
+        model=model,
+        args=TrainingArguments(**settings), 
+        train_dataset=support_set,
+        eval_dataset=test_set,
+        data_collator=collator,
+        compute_metrics=compute_metrics,
+        callback=WandbPrefixCallback(prefix)
+    )
+
+    trainer.train()
+
+    final_metrics = trainer.evaluate(support_set, metric_key_prefix="train")
+    final_metrics.update(trainer.evaluate(test_set, metric_key_prefix="test"))
+
+    return model, final_metrics
 
 
 def setup_bert(bert, tokenizer, fshandler, params=None):
