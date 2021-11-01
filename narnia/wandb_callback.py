@@ -1,6 +1,31 @@
-import wandb
-from transformers import TrainerCallback
+import functools
+import importlib.util
+import numbers
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+from transformers.file_utils import is_datasets_available
+from transformers.utils import logging
+from transformers.file_utils import ENV_VARS_TRUE_VALUES, is_torch_tpu_available  # noqa: E402
+from transformers.trainer_callback import ProgressCallback, TrainerCallback  # noqa: E402
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, BestRun, IntervalStrategy  # noqa: E402
 from transformers.integrations import WandbCallback
+
+
+def is_wandb_available():
+    # any value of WANDB_DISABLED disables wandb
+    if os.getenv("WANDB_DISABLED", "").upper() in ENV_VARS_TRUE_VALUES:
+        logger.warning(
+            "Using the `WAND_DISABLED` environment variable is deprecated and will be removed in v5. Use the "
+            "--report_to flag to control the integrations used for logging result (for instance --report_to none)."
+        )
+        return False
+    return importlib.util.find_spec("wandb") is not None
+
+
+logger = logging.get_logger(__name__)
 
 
 def rewrite_logs(d, prefix):

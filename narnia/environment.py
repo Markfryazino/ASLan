@@ -11,7 +11,7 @@ import pandas as pd
 from tqdm.auto import tqdm, trange
 
 
-def load_from_memory(root_path="artifacts/CLINC150:v4/zero_shot_split"):
+def load_from_memory(root_path="artifacts/CLINC150:v5"):
     splits = []
     for part in ["train", "val", "test"]:
         for see in ["seen", "unseen"]:
@@ -260,8 +260,20 @@ class FewShotHandler():
     def eval_stuu(self, model, tokenizer, sbert=None, top_k=10, batch_size=64, separator="<sep>"):
         if (self.stuu_dataset is None) or (top_k != self.stuu_dataset.top_k):
             self.log("Reinitializing STUU dataset")
-            self.stuu_dataset = STUUDataset(self.known, self.unknown, sbert, top_k, device=self.device)
+            self.stuu_dataset = STUUDataset(self.known, self.unknown, logger=self.logger, sbert=sbert, 
+                                            top_k=top_k, device=self.device)
         else:
             self.log("Using cached STUU dataset")
     
         return self.eval_as_1nn(model, tokenizer, self.stuu_dataset, batch_size, separator)
+
+    def eval_pure_sbert(self, sbert=None):
+        if (self.stuu_dataset is None) or (self.stuu_dataset.top_k != 1):
+            self.log("Reinitializing STUU dataset")
+            self.stuu_dataset = STUUDataset(self.known, self.unknown, logger=self.logger, sbert=sbert, 
+                                            top_k=1, device=self.device)
+        else:
+            self.log("Using cached STUU dataset")
+    
+        acc = np.mean([row["label"] for row in self.stuu_dataset])
+        return {"accuracy": acc}

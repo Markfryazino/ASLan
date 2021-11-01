@@ -121,7 +121,7 @@ def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, l
         eval_dataset=test_set,
         data_collator=collator,
         compute_metrics=compute_metrics,
-        callback=WandbPrefixCallback(prefix)
+        callbacks=[WandbPrefixCallback(prefix)]
     )
 
     trainer.train()
