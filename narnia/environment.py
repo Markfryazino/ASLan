@@ -23,6 +23,12 @@ def load_from_memory(root_path="artifacts/CLINC150:v5"):
     return raw, raw_unseen
 
 
+def load_unseen(root_path="artifacts/CLINC150:v5"):
+    raw = load_dataset("csv", data_files=os.path.join(root_path, "unseen.csv"))
+    raw = raw.filter(lambda x: x["intent"] != "oos")
+    return raw
+
+
 def set_generator(dataset, support_size=10, shuffle=True):
     unique_intents = dataset.unique("intent")
     full_intents = np.array(dataset["intent"])

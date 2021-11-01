@@ -47,3 +47,17 @@ def log_snips(run=None):
     run.log_artifact(my_data)
 
     wandb.finish()
+
+
+def log_banking77(run=None, metadata=None, postfix=None):
+    if metadata is None:
+        metadata = {}
+    if run is None:
+        run = wandb.init(project="aslan", job_type="data-logging",
+                         notes="Log another version of BANKING77 dataset")
+    my_data = wandb.Artifact("BANKING77", type="dataset", metadata=metadata)
+
+    my_data.add_dir("data/BANKING77")
+    run.log_artifact(my_data)
+
+    wandb.finish()

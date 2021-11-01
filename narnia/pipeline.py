@@ -6,7 +6,7 @@ import logging
 import torch
 from transformers import RobertaTokenizerFast, RobertaForSequenceClassification
 
-from environment import FewShotHandler, load_from_memory, set_generator
+from environment import FewShotHandler, load_from_memory, set_generator, load_unseen
 from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_roberta, setup_entailment_roberta
 from utils import set_random_seed, get_timestamp_str, append_prefix
 
@@ -43,7 +43,7 @@ class FewShotLaboratory:
         self.logger(f"Initializing laboratory\nUsing device {self.device}")
 
         load_artifacts(artifacts, self.logger)
-        self.data, self.unseen = load_from_memory(f"artifacts/{artifacts['dataset']}")
+        self.unseen = load_unseen(f"artifacts/{artifacts['dataset']}")
         self.generator = set_generator(self.unseen, support_size=support_size)
 
     def run(self, random_state):
