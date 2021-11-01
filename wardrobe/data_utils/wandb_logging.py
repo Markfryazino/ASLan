@@ -61,3 +61,18 @@ def log_banking77(run=None, metadata=None, postfix=None):
     run.log_artifact(my_data)
 
     wandb.finish()
+
+
+def log_clinc150tu(run=None, metadata=None, postfix=None):
+    if metadata is None:
+        metadata = {}
+    if run is None:
+        run = wandb.init(project="aslan", job_type="data-logging",
+                         notes="Log CLINC150TU")
+    my_data = wandb.Artifact("CLINC150TU", type="dataset", metadata=metadata,
+                             description="CLINC150 but all intents are unseen")
+
+    my_data.add_dir("data/CLINC150TU")
+    run.log_artifact(my_data)
+
+    wandb.finish()

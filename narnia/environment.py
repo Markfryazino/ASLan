@@ -9,6 +9,10 @@ from sentence_transformers import SentenceTransformer
 import os
 import pandas as pd
 from tqdm.auto import tqdm, trange
+from datasets import set_caching_enabled
+
+
+set_caching_enabled(False)
 
 
 def load_from_memory(root_path="artifacts/CLINC150:v5"):
@@ -26,7 +30,7 @@ def load_from_memory(root_path="artifacts/CLINC150:v5"):
 def load_unseen(root_path="artifacts/CLINC150:v5"):
     raw = load_dataset("csv", data_files=os.path.join(root_path, "unseen.csv"))
     raw = raw.filter(lambda x: x["intent"] != "oos")
-    return raw
+    return raw["train"]
 
 
 def set_generator(dataset, support_size=10, shuffle=True):
@@ -166,10 +170,12 @@ class FewShotHandler():
         self.intents = self.unknown.unique("intent")
         self.intent_num = len(self.intents)
         self.intent2label = {intent: label for label, intent in enumerate(self.intents)}
-        self.unknown = self.unknown.map(lambda x: encode_example(x, self.intent2label), batched=False)
+        self.unknown = self.unknown.map(lambda x: encode_example(x, self.intent2label), batched=False,
+                                        load_from_cache_file=False)
 
         if known is not None:
-            self.known = self.known.map(lambda x: encode_example(x, self.intent2label), batched=False)
+            self.known = self.known.map(lambda x: encode_example(x, self.intent2label), batched=False,
+                                        load_from_cache_file=False)
 
             known_intents_array = np.array(known["intent"])
             self.known_intent_idxs = {}

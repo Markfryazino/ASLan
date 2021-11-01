@@ -5,10 +5,14 @@ import logging
 
 import torch
 from transformers import RobertaTokenizerFast, RobertaForSequenceClassification
+from datasets import set_caching_enabled
 
 from environment import FewShotHandler, load_from_memory, set_generator, load_unseen
 from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_roberta, setup_entailment_roberta
 from utils import set_random_seed, get_timestamp_str, append_prefix
+
+
+set_caching_enabled(False)
 
 
 def load_artifacts(artifacts: Dict[str, str], logger):
