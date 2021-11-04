@@ -71,8 +71,8 @@ def set_generator(dataset, support_size=10, shuffle=True):
             test.append(dataset.select(test_ids))
 
         if shuffle:
-            yield concatenate_datasets(train).shuffle().flatten_indices(), \
-                  concatenate_datasets(test).shuffle().flatten_indices()
+            yield concatenate_datasets(train).shuffle(load_from_cache_file=False).flatten_indices(), \
+                  concatenate_datasets(test).shuffle(load_from_cache_file=False).flatten_indices()
         else:
             yield concatenate_datasets(train).flatten_indices(), concatenate_datasets(test).flatten_indices()
 

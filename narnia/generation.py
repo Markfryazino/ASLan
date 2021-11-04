@@ -75,7 +75,7 @@ def synthesize_hard_negatives(dataset, model, tokenizer, ratio=1):
     for i in range(ratio):
         fakes.append(dataset.map(lambda x: generate_hard_negative(model, tokenizer, x)), load_from_cache_file=False)
     
-    return concatenate_datasets(fakes).shuffle()
+    return concatenate_datasets(fakes).shuffle(load_from_cache_file=False)
 
 
 class GenerationTypedDataset(torch.utils.data.Dataset):
