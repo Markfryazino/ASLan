@@ -73,7 +73,7 @@ def generate_hard_negative(model, tokenizer, example):
 def synthesize_hard_negatives(dataset, model, tokenizer, ratio=1):
     fakes = []
     for i in range(ratio):
-        fakes.append(dataset.map(lambda x: generate_hard_negative(model, tokenizer, x)))
+        fakes.append(dataset.map(lambda x: generate_hard_negative(model, tokenizer, x)), load_from_cache_file=False)
     
     return concatenate_datasets(fakes).shuffle()
 
@@ -102,11 +102,11 @@ class GenerationTypedDataset(torch.utils.data.Dataset):
             "hn": np.zeros((self.n, self.hard_num), dtype=int),
         }
 
-        self.source = self.source.map(lambda x, idx: {"index": idx, **x}, with_indices=True)
+        self.source = self.source.map(lambda x, idx: {"index": idx, **x}, with_indices=True, load_from_cache_file=False)
         
         for intent in tqdm(self.intents):
-            nice_guys = self.source.filter(lambda x: x["intent"] == intent)
-            bad_guys = self.source.filter(lambda x: x["intent"] != intent)
+            nice_guys = self.source.filter(lambda x: x["intent"] == intent, load_from_cache_file=False)
+            bad_guys = self.source.filter(lambda x: x["intent"] != intent, load_from_cache_file=False)
             nice_guys_idx = np.array(nice_guys["index"])
             bad_guys_idx = np.array(bad_guys["index"])
 

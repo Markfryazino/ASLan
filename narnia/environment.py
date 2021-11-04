@@ -25,12 +25,14 @@ def load_split_dataset(root_path, dataset, split):
         buckets = eval(f.read())
 
     if split == -1:
-        unseen = sum(buckets)
+        unseen = []
+        for bucket in buckets:
+            unseen += bucket
     else:
         unseen = buckets[split]
 
-    seen_data = raw.filter(lambda x: x["intent"] not in unseen)
-    unseen_data = raw.filter(lambda x: x["intent"] in unseen)
+    seen_data = raw.filter(lambda x: x["intent"] not in unseen, load_from_cache_file=False)
+    unseen_data = raw.filter(lambda x: x["intent"] in unseen, load_from_cache_file=False)
     return seen_data, concatenate_datasets([unseen_data["train"], unseen_data["val"], unseen_data["test"]])
 
 
@@ -41,14 +43,14 @@ def load_from_memory(root_path="artifacts/CLINC150:v5"):
             splits.append(f"{see}_{part}")
 
     raw = load_dataset("csv", data_files={el: os.path.join(root_path, el + ".csv") for el in splits})
-    raw = raw.filter(lambda x: x["intent"] != "oos")
+    raw = raw.filter(lambda x: x["intent"] != "oos", load_from_cache_file=False)
     raw_unseen = concatenate_datasets([raw["unseen_train"], raw["unseen_val"], raw["unseen_test"]])
     return raw, raw_unseen
 
 
 def load_unseen(root_path="artifacts/CLINC150:v5"):
     raw = load_dataset("csv", data_files=os.path.join(root_path, "unseen.csv"))
-    raw = raw.filter(lambda x: x["intent"] != "oos")
+    raw = raw.filter(lambda x: x["intent"] != "oos", load_from_cache_file=False)
     return raw["train"]
 
 

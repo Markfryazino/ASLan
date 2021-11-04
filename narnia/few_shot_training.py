@@ -162,7 +162,7 @@ def setup_entailment_roberta(roberta, tokenizer, fshandler, params):
 
     if "fake_data" in params:
         fake_data = params["fake_data"].map(lambda x: {"label": 0, "generated": x["generated"], \
-                                                       "intent": x["intent"]})
+                                                       "intent": x["intent"]}, load_from_cache_file=False)
         fake_data = TokenizedDataset(fake_data, lambda x: x["generated"] + params["separator"] + x["intent"],
                                      tokenizer)
         support_set = torch.utils.data.ConcatDataset([support_set, fake_data])

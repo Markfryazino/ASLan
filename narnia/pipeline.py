@@ -35,7 +35,7 @@ class FewShotLaboratory:
         logger: Callable[[str], None] = print,
         wandb_args: Dict = {},
         params: Dict = {},
-        root_path: "artifacts/"
+        root_path: str = "artifacts/"
     ):
         self.config = {}
         self.modules = modules
@@ -44,6 +44,7 @@ class FewShotLaboratory:
         self.logger = logger
         self.wandb_args = wandb_args
         self.params = params
+        self.root_path = root_path
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.logger(f"Initializing laboratory\nUsing device {self.device}")
@@ -54,7 +55,7 @@ class FewShotLaboratory:
     def init_data(self, dataset, split):
         self.logger(f"Setting dataset {dataset}, split {split}")
         self.seen, self.unseen = load_split_dataset(self.root_path, dataset, split)
-        self.generator = set_generator(self.unseen, support_size=support_size)
+        self.generator = set_generator(self.unseen, support_size=self.support_size)
         self.config.update({"dataset": dataset, "split": split})
 
     def run_series(self, dataset, random_states, use_negative_split=False):
@@ -83,6 +84,7 @@ class FewShotLaboratory:
 
     def run(self, random_state):
         wandb_run = wandb.init(**self.wandb_args, save_code=True)
+        self.config["random_state"] = random_state
 
         for artifact in self.artifacts.values():
             wandb_run.use_artifact(f"broccoliman/aslan/{artifact}")
