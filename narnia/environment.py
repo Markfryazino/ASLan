@@ -15,6 +15,25 @@ from datasets import set_caching_enabled
 set_caching_enabled(False)
 
 
+def load_split_dataset(root_path, dataset, split):
+    mapping = {el: os.path.join(root_path, dataset, el + ".csv") for el in ["train", "valid", "test"]}
+    mapping["val"] = mapping["valid"]
+    del mapping["valid"]
+
+    raw = load_dataset("csv", data_files=mapping)
+    with open(os.path.join(root_path, dataset, "splits.txt")) as f:
+        buckets = eval(f.read())
+
+    if split == -1:
+        unseen = sum(buckets)
+    else:
+        unseen = buckets[split]
+
+    seen_data = raw.filter(lambda x: x["intent"] not in unseen)
+    unseen_data = raw.filter(lambda x: x["intent"] in unseen)
+    return seen_data, concatenate_datasets([unseen_data["train"], unseen_data["val"], unseen_data["test"]])
+
+
 def load_from_memory(root_path="artifacts/CLINC150:v5"):
     splits = []
     for part in ["train", "val", "test"]:

@@ -7,7 +7,7 @@ import torch
 from transformers import RobertaTokenizerFast, RobertaForSequenceClassification
 from datasets import set_caching_enabled
 
-from environment import FewShotHandler, load_from_memory, set_generator, load_unseen
+from environment import FewShotHandler, load_from_memory, set_generator, load_unseen, load_split_dataset
 from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_roberta, setup_entailment_roberta
 from utils import set_random_seed, get_timestamp_str, append_prefix
 
@@ -34,8 +34,10 @@ class FewShotLaboratory:
         support_size: int = 10,
         logger: Callable[[str], None] = print,
         wandb_args: Dict = {},
-        params: Dict = {}
+        params: Dict = {},
+        root_path: "artifacts/"
     ):
+        self.config = {}
         self.modules = modules
         self.artifacts = artifacts
         self.support_size = support_size
@@ -47,8 +49,37 @@ class FewShotLaboratory:
         self.logger(f"Initializing laboratory\nUsing device {self.device}")
 
         load_artifacts(artifacts, self.logger)
-        self.unseen = load_unseen(f"artifacts/{artifacts['dataset']}")
+        self.seen, self.unseen, self.generator = None, None, None
+
+    def init_data(self, dataset, split):
+        self.logger(f"Setting dataset {dataset}, split {split}")
+        self.seen, self.unseen = load_split_dataset(self.root_path, dataset, split)
         self.generator = set_generator(self.unseen, support_size=support_size)
+        self.config.update({"dataset": dataset, "split": split})
+
+    def run_series(self, dataset, random_states, use_negative_split=False):
+        splits = list(range(5))
+        if use_negative_split:
+            splits.append(-1)
+
+        logs = {}
+        for split in splits:
+            logs[split] = {}
+            self.init_data(dataset, split)
+            for state in random_states:
+                self.logger(f"Starting run with split {split}, state {state}")
+                metrics, handler = self.run(state)
+                logs[split][state] = metrics
+
+        self.logger("Finishing")
+        wandb_run = wandb.init(**self.wandb_args, job_type="just-logging")
+
+        for artifact in self.artifacts.values():
+            wandb_run.use_artifact(f"broccoliman/aslan/{artifact}")
+
+        wandb.log(logs)
+        wandb.finish()
+
 
     def run(self, random_state):
         wandb_run = wandb.init(**self.wandb_args, save_code=True)
@@ -80,7 +111,9 @@ class FewShotLaboratory:
             self.logger(f"Block {block_name} finished. Metrics: {metrics}\n")
 
         self.logger(f"Run finished.")
+        wandb.config.update(self.config)
         wandb.finish()
+
         return run_metrics, fshandler
 
 

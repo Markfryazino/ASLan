@@ -78,7 +78,6 @@ def synthesize_hard_negatives(dataset, model, tokenizer, ratio=1):
     return concatenate_datasets(fakes).shuffle()
 
 
-#!g1.1
 class GenerationTypedDataset(torch.utils.data.Dataset):
     def __init__(self, source_dataset, distances, hard_num=5, ratios=None):
         self.source = source_dataset

@@ -76,3 +76,18 @@ def log_clinc150tu(run=None, metadata=None, postfix=None):
     run.log_artifact(my_data)
 
     wandb.finish()
+
+
+def log_SOAD(run=None, metadata=None, postfix=None):
+    if metadata is None:
+        metadata = {}
+    if run is None:
+        run = wandb.init(project="aslan", job_type="data-logging",
+                         notes="Log SOAD")
+    my_data = wandb.Artifact("SOAD", type="dataset", metadata=metadata,
+                             description="System Of Awesome Datasets")
+
+    my_data.add_dir("data/SOAD")
+    run.log_artifact(my_data)
+
+    wandb.finish()
