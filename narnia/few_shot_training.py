@@ -132,6 +132,39 @@ def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, l
     return model, final_metrics
 
 
+def laboratory_pretraining(model, tokenizer, seen_data, setup_function, prefix, log_model=False, params=None):
+    if params is None:
+        params = {}
+    if "training" not in params:
+        params["training"] = {}
+
+    os.environ["WANDB_LOG_MODEL"] = str(log_model).lower()
+
+    collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
+    model, train_set, eval_set, test_set = setup_function(model, tokenizer, seen_data, params)
+
+    settings = COMMON_ARGS.copy()
+    settings.update(params["training"])
+
+    trainer = Trainer(
+        model=model,
+        args=TrainingArguments(**settings), 
+        train_dataset=train_set,
+        eval_dataset=test_set,
+        data_collator=collator,
+        compute_metrics=compute_metrics,
+        callbacks=[WandbPrefixCallback(prefix)]
+    )
+
+    trainer.train()
+
+    final_metrics = trainer.evaluate(train_set, metric_key_prefix="train")
+    final_metrics.update(trainer.evaluate(eval_set, metric_key_prefix="eval"))
+    final_metrics.update(trainer.evaluate(test_set, metric_key_prefix="test"))
+
+    return model, final_metrics
+
+
 def setup_bert(bert, tokenizer, fshandler, params=None):
     for param in bert.parameters():
         param.requires_grad = True
@@ -147,6 +180,14 @@ def setup_bert(bert, tokenizer, fshandler, params=None):
     test_set = TokenizedDataset(fshandler.unknown, lambda x: x["text"], tokenizer)
 
     return bert, support_set, test_set
+
+
+def setup_pretraining_bert(bert, tokenizer, seen_data, params=None):
+    train_set = TokenizedDataset(seen_data["train"], lambda x: x["text"], tokenizer)
+    eval_set = TokenizedDataset(seen_data["val"], lambda x: x["text"], tokenizer)
+    test_set = TokenizedDataset(seen_data["test"], lambda x: x["text"], tokenizer)
+
+    return bert, train_set, eval_set, test_set
 
 
 def setup_entailment_roberta(roberta, tokenizer, fshandler, params):

@@ -4,5 +4,6 @@ secret/
 main.py
 
 .vscode/
+.VSCodeCounter/
 wandb/
 __pycache__/
