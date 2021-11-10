@@ -41,6 +41,7 @@ class FewShotLaboratory:
     ):
         self.config = {}
         self.modules = modules
+        self.pretraining_modules = pretraining_modules
         self.artifacts = artifacts
         self.support_size = support_size
         self.logger = logger
@@ -53,11 +54,16 @@ class FewShotLaboratory:
 
         load_artifacts(artifacts, self.logger)
         self.seen, self.unseen, self.generator = None, None, None
-        self.state = {"seen": self.seen}
+        self.state = {
+            "seen_data": self.seen,
+            "device": self.device,
+            "logger": self.logger
+        }
 
     def init_data(self, dataset, split):
         self.logger(f"Setting dataset {dataset}, split {split}")
         self.seen, self.unseen = load_split_dataset(self.root_path, dataset, split)
+        self.state["seen_data"] = self.seen
         self.generator = set_generator(self.unseen, support_size=self.support_size)
         self.config.update({"dataset": dataset, "split": split})
 
@@ -116,7 +122,7 @@ class FewShotLaboratory:
         wandb.config.update(self.config)
         wandb.finish()
 
-        return run_metrics, fshandler 
+        return run_metrics
 
     def run(self, random_state):
         wandb_run = wandb.init(**self.wandb_args, save_code=True)
@@ -182,9 +188,12 @@ def pretrain_naive_roberta(state, params):
     block_name = params["block_name"]
     del params["block_name"] 
 
+    num_labels = len(state["seen_data"]["train"].unique("label"))
+
     tokenizer = RobertaTokenizerFast.from_pretrained('roberta-base')
     tokenizer.add_special_tokens({"sep_token": "<sep>", "pad_token": "<pad>"}) 
-    model = RobertaForSequenceClassification.from_pretrained('roberta-base').to(state["device"])
+    model = RobertaForSequenceClassification.from_pretrained('roberta-base',
+                                                             num_labels=num_labels).to(state["device"])
     model.resize_token_embeddings(len(tokenizer))
 
     model, metrics = laboratory_pretraining(model, tokenizer, state["seen_data"], setup_pretraining_bert, 
@@ -201,7 +210,7 @@ def pretrain_naive_roberta(state, params):
 
         my_data = wandb.Artifact(params["artifact_name"], type="model")
         my_data.add_dir(params["model_path"])
-        run.log_artifact(my_data)
+        wandb.log_artifact(my_data)
 
     return metrics
 
@@ -209,7 +218,8 @@ def pretrain_naive_roberta(state, params):
 def encode_labels(state, params):
     unique_intents = list(state["seen_data"].unique("intent")["train"])
     classlabel = ClassLabel(names=unique_intents)
-    state["seen_data"] = state["seen_data"].map(lambda x: {"label": classlabel.str2int(x["intent"]), **x})
+    state["seen_data"] = state["seen_data"].map(lambda x: {"label": classlabel.str2int(x["intent"]), **x},
+                                                load_from_cache_file=False)
     state["classlabel"] = classlabel
     return {}
 

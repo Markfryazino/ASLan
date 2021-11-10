@@ -44,13 +44,24 @@ COMMON_ARGS = {
 }
 
 
-def compute_metrics(eval_pred):
+def _compute_metrics(eval_pred, average="binary"):
     logits, labels = eval_pred
     predictions = np.argmax(logits, axis=-1)
     metric_dict = {}
     for metric in [ACCURACY, PRECISION, RECALL, F1]:
-        metric_dict.update(metric.compute(predictions=predictions, references=labels))
+        try:
+            metric_dict.update(metric.compute(predictions=predictions, references=labels, average=average))
+        except:
+            metric_dict.update(metric.compute(predictions=predictions, references=labels))
     return metric_dict
+
+
+def compute_metrics(eval_pred):
+    return _compute_metrics(eval_pred)
+
+
+def compute_multiclass_metrics(eval_pred):
+    return _compute_metrics(eval_pred, average="macro")
 
 
 def model_finetuning(model, tokenizer, fshandler, setup_function, use_artifacts, wandb_tags, 
@@ -152,7 +163,7 @@ def laboratory_pretraining(model, tokenizer, seen_data, setup_function, prefix, 
         train_dataset=train_set,
         eval_dataset=test_set,
         data_collator=collator,
-        compute_metrics=compute_metrics,
+        compute_metrics=compute_multiclass_metrics,
         callbacks=[WandbPrefixCallback(prefix)]
     )
 
