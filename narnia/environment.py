@@ -6,7 +6,7 @@ import torch
 import json
 from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concatenate_datasets
 from transformers import DataCollatorWithPadding
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, InputExample
 import os
 import pandas as pd
 from tqdm.auto import tqdm, trange
@@ -168,6 +168,8 @@ class SBERTDataset(torch.utils.data.Dataset):
             "easy_positive": 3,
             "easy_negative": 3
         }
+        logger(f"Initializing SBERTDataset, pair_numbers: {self.pair_numbers}")
+
         self.source = source_data
         self.n = len(self.source)
 
@@ -189,7 +191,7 @@ class SBERTDataset(torch.utils.data.Dataset):
             self.positive_texts[intent] = self.source.select(np.where(np.array(self.source["intent"]) == intent)[0])
             self.negative_texts[intent] = self.source.select(np.where(np.array(self.source["intent"]) != intent)[0])
         
-        mask = scipy.spatial.distance.pdist(np.array(data["label"]).reshape((-1, 1)))
+        mask = scipy.spatial.distance.pdist(np.array(self.source["label"]).reshape((-1, 1)))
         negative_mask = (mask > 0).astype(int)
         positive_mask = (mask == 0).astype(int)
 

@@ -205,7 +205,7 @@ def setup_pretraining_bert(bert, tokenizer, seen_data, params=None):
 
 
 def setup_pretraining_knn_roberta(roberta, tokenizer, seen_data, params=None):
-    if params is None
+    if params is None:
         params = {}
     if "dataset" not in params:
         params["dataset"] = {}
@@ -279,6 +279,7 @@ def sbert_training(model, train_data, prefix, eval_data=None, params=None):
 
     train = IEFormatDataset(SBERTDataset(train_data, **params["dataset"]))
     evaluator = None
+
     if eval_data is not None:
         val = IEFormatDataset(SBERTDataset(eval_data, **params["dataset"]))
         evaluator = EmbeddingSimilarityEvaluator.from_input_examples(val, name='sbert-val')
@@ -293,7 +294,7 @@ def sbert_training(model, train_data, prefix, eval_data=None, params=None):
         "output_path": "./results",
         "evaluation_steps": 100,
     }
-    args.update(params["training"])
+    training_args.update(params["training"])
 
     sbert.fit(train_objectives=[(train_dataloader, train_loss)],
           evaluator=evaluator,

@@ -225,7 +225,7 @@ def pretrain_sbert(state, params):
 
     sbert = SentenceTransformer("all-mpnet-base-v2").to(state["device"])
     sbert, metrics = sbert_training(sbert, state["seen_data"]["train"], prefix=block_name, 
-                                    eval_data=state["seen_data"]["val"], params)
+                                    eval_data=state["seen_data"]["val"], params=params)
     state["sbert"] = sbert
     return metrics
 
