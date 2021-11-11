@@ -2,6 +2,7 @@ import wandb
 from typing import Dict, Callable, List, Tuple
 import os
 import logging
+from pathlib import Path
 
 import torch
 from transformers import RobertaTokenizerFast, RobertaForSequenceClassification
@@ -52,6 +53,7 @@ class FewShotLaboratory:
         self.root_path = root_path
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        Path("./results").mkdir(parents=True, exist_ok=True)
         self.logger(f"Initializing laboratory\nUsing device {self.device}")
 
         load_artifacts(artifacts, self.logger)
@@ -138,6 +140,7 @@ class FewShotLaboratory:
         set_random_seed(random_state)
         known, unknown = next(self.generator)
         fshandler = FewShotHandler(unknown, known, device=self.device, logger=self.logger)
+        fshandler.state.update(self.state)
 
         run_metrics = {}
 
@@ -199,6 +202,12 @@ def save_model(state, params):
 
     return {}
 
+def save_sbert(state, params):
+    my_data = wandb.Artifact(params["artifact_name"], type="model")
+    my_data.add_dir(params["sbert_path"])
+    wandb.log_artifact(my_data)
+    return {}
+
 def pretrain_naive_roberta(state, params):
     block_name = params["block_name"]
     del params["block_name"] 
@@ -226,6 +235,17 @@ def pretrain_sbert(state, params):
     sbert = SentenceTransformer("all-mpnet-base-v2").to(state["device"])
     sbert, metrics = sbert_training(sbert, state["seen_data"]["train"], prefix=block_name, 
                                     eval_data=state["seen_data"]["val"], params=params)
+    state["sbert"] = sbert
+    return metrics
+
+
+def finetune_sbert(fshandler, params):
+    block_name = params["block_name"]
+    del params["block_name"]
+
+    sbert = fshandler.state["sbert"].to(state["device"])
+    sbert, metrics = sbert_training(sbert, fshandler.known, prefix=block_name, 
+                                    eval_data=fshandler.unknown, params=params)
     state["sbert"] = sbert
     return metrics
 

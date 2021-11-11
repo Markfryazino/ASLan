@@ -296,9 +296,9 @@ def sbert_training(model, train_data, prefix, eval_data=None, params=None):
     }
     training_args.update(params["training"])
 
-    sbert.fit(train_objectives=[(train_dataloader, train_loss)],
+    model.fit(train_objectives=[(train_dataloader, train_loss)],
           evaluator=evaluator,
           callback=callback.log,
           **training_args)
 
-    return sbert, {"eval_score": evaluator(sbert)}
+    return model, {"eval_score": evaluator(model)}
