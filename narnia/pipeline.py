@@ -9,8 +9,10 @@ from datasets import set_caching_enabled, ClassLabel
 
 from environment import FewShotHandler, load_from_memory, set_generator, load_unseen, load_split_dataset
 from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_roberta, setup_entailment_roberta, \
-                              laboratory_pretraining, setup_pretraining_bert
+                              laboratory_pretraining, setup_pretraining_bert, sbert_training, \
+                              setup_pretraining_knn_roberta
 from utils import set_random_seed, get_timestamp_str, append_prefix
+from sentence_transformers import SentenceTransformer
 
 
 set_caching_enabled(False)
@@ -184,6 +186,19 @@ def finetune_knn_roberta(fshandler, params):
     return metrics
 
 
+def save_model(state, params):
+    model = state[params["model"]]
+    tokenizer = state[params["tokenizer"]]
+
+    model.save_pretrained(params["model_path"])
+    tokenizer.save_pretrained(params["model_path"])
+
+    my_data = wandb.Artifact(params["artifact_name"], type="model")
+    my_data.add_dir(params["model_path"])
+    wandb.log_artifact(my_data)
+
+    return {}
+
 def pretrain_naive_roberta(state, params):
     block_name = params["block_name"]
     del params["block_name"] 
@@ -201,16 +216,33 @@ def pretrain_naive_roberta(state, params):
     state["naive_roberta_model"] = model
     state["naive_roberta_tokenizer"] = tokenizer
 
-    if ("save_model" in params) and params["save_model"]:
-        if "model_path" not in params:
-            params["model_path"] = "./results/naive_roberta"
+    return metrics
 
-        model.save_pretrained(params["model_path"])
-        tokenizer.save_pretrained(params["model_path"])
 
-        my_data = wandb.Artifact(params["artifact_name"], type="model")
-        my_data.add_dir(params["model_path"])
-        wandb.log_artifact(my_data)
+def pretrain_sbert(state, params):
+    block_name = params["block_name"]
+    del params["block_name"]
+
+    sbert = SentenceTransformer("all-mpnet-base-v2").to(state["device"])
+    sbert, metrics = sbert_training(sbert, state["seen_data"]["train"], prefix=block_name, 
+                                    eval_data=state["seen_data"]["val"], params)
+    state["sbert"] = sbert
+    return metrics
+
+
+def pretrain_knn_roberta(state, params):
+    block_name = params["block_name"]
+    del params["block_name"]
+
+    tokenizer = RobertaTokenizerFast.from_pretrained('roberta-base')
+    tokenizer.add_special_tokens({"sep_token": "<sep>", "pad_token": "<pad>"}) 
+    model = RobertaForSequenceClassification.from_pretrained('roberta-base', num_labels=2).to(state["device"])
+    model.resize_token_embeddings(len(tokenizer))
+
+    model, metrics = laboratory_pretraining(model, tokenizer, state["seen_data"], setup_pretraining_knn_roberta, 
+                                            prefix=block_name, params=params)
+    state["knn_roberta_model"] = model
+    state["knn_roberta_tokenizer"] = tokenizer
 
     return metrics
 

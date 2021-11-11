@@ -1,6 +1,7 @@
 import wandb
 import numpy as np
 import scipy
+import scipy.spatial.distance
 import torch
 import json
 from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concatenate_datasets
@@ -158,7 +159,106 @@ class STUUDataset(torch.utils.data.Dataset):
             "label": int(self.unknown[un_id]["intent"] == self.known[kn_id]["intent"])
         }
 
+
+class SBERTDataset(torch.utils.data.Dataset):
+    def __init__(self, source_data, sbert=None, logger=print, pair_numbers=None, device="cuda"):
+        self.pair_numbers = pair_numbers or {
+            "hard_positive": 3,
+            "hard_negative": 3,
+            "easy_positive": 3,
+            "easy_negative": 3
+        }
+        self.source = source_data
+        self.n = len(self.source)
+
+        if sbert is None:
+            logger("Parameter sbert is None, initializing as 'all-mpnet-base-v2'")
+            sbert = SentenceTransformer('all-mpnet-base-v2').to(device)
+        elif type(sbert) is str:
+            sbert = SentenceTransformer(sbert).to(device)
+
+        logger("Encoding dataset using SBERT...")
+        embeddings = sbert.encode(self.source["text"])
+        distances = scipy.spatial.distance.pdist(embeddings, metric="cosine")
+        logger("Dataset was encoded")
+
+        unique_intents = self.source.unique("intent")
+        self.positive_texts = {}
+        self.negative_texts = {}
+        for intent in unique_intents:
+            self.positive_texts[intent] = self.source.select(np.where(np.array(self.source["intent"]) == intent)[0])
+            self.negative_texts[intent] = self.source.select(np.where(np.array(self.source["intent"]) != intent)[0])
+        
+        mask = scipy.spatial.distance.pdist(np.array(data["label"]).reshape((-1, 1)))
+        negative_mask = (mask > 0).astype(int)
+        positive_mask = (mask == 0).astype(int)
+
+        negative_sform = scipy.spatial.distance.squareform(distances * negative_mask)
+        negative_sform[np.where(negative_sform == 0.)] = 42
+        self.hard_negatives = np.argpartition(negative_sform, 
+                                              self.pair_numbers["hard_negative"])[:,:self.pair_numbers["hard_negative"]]
+
+        del negative_mask, negative_sform
+        logger("Negative indices were built!")
+
+        positive_sform = scipy.spatial.distance.squareform(distances * positive_mask)
+        positive_sform[np.where(positive_sform == 0.)] = -42
+        self.hard_positives = np.argpartition(positive_sform, 
+                                              -self.pair_numbers["hard_positive"])[:,-self.pair_numbers["hard_positive"]:]
+
+        del positive_mask, positive_sform
+        logger("Positive indices were built!")
+
+    def __len__(self):
+        return self.n * sum(self.pair_numbers.values())
     
+    def __getitem__(self, idx):
+        mode = idx % sum(self.pair_numbers.values())
+        real_idx = idx // sum(self.pair_numbers.values())
+        if mode < self.pair_numbers["hard_positive"]:
+            other_idx = int(self.hard_positives[real_idx][mode])
+            other_text = self.source[other_idx]["text"]
+            other_intent = self.source[other_idx]["intent"]
+            label = 1
+        elif mode < self.pair_numbers["hard_positive"] + self.pair_numbers["hard_negative"]:
+            other_idx = int(self.hard_negatives[real_idx][mode - self.pair_numbers["hard_positive"]])
+            other_text = self.source[other_idx]["text"]
+            other_intent = self.source[other_idx]["intent"]
+            label = 0
+        elif mode < self.pair_numbers["hard_positive"] + self.pair_numbers["hard_negative"] + self.pair_numbers["easy_positive"]:
+            other_idx = np.random.choice(len(self.positive_texts[self.source[real_idx]["intent"]]))
+            other_text = self.positive_texts[self.source[real_idx]["intent"]][other_idx]["text"]
+            other_intent = self.positive_texts[self.source[real_idx]["intent"]][other_idx]["intent"]
+            label = 1
+        else:
+            other_idx = np.random.choice(len(self.negative_texts[self.source[real_idx]["intent"]]))
+            other_text = self.negative_texts[self.source[real_idx]["intent"]][other_idx]["text"]
+            other_intent = self.negative_texts[self.source[real_idx]["intent"]][other_idx]["intent"]
+            label = 0
+
+        return {
+            "source_text": self.source[real_idx]["text"],
+            "source_intent": self.source[real_idx]["intent"],
+            "other_text": other_text,
+            "other_intent": other_intent,
+            "label": label
+        }
+
+
+class IEFormatDataset(torch.utils.data.Dataset):
+    def __init__(self, source_dataset, samples=None):
+        self.source = source_dataset
+        self.idxs = np.arange(len(source_dataset))
+        if samples is not None:
+            self.idxs = np.random.choice(self.idxs, size=(samples), replace=False)
+    def __len__(self):
+        return len(self.idxs)
+    def __getitem__(self, idx):
+        _idx = int(self.idxs[idx])
+        return InputExample(texts=[self.source[_idx]["source_text"], self.source[_idx]["other_text"]],
+                            label=float(self.source[_idx]["label"]))
+
+
 class TokenizedDataset(torch.utils.data.Dataset):
     def __init__(self, source_dataset, builder, tokenizer, sample_size=None):
         self.source = source_dataset

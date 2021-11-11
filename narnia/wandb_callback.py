@@ -4,6 +4,7 @@ import numbers
 import os
 import sys
 import tempfile
+import wandb
 from pathlib import Path
 
 from transformers.file_utils import is_datasets_available
@@ -34,9 +35,9 @@ def rewrite_logs(d, prefix):
     eval_prefix_len = len(eval_prefix)
     for k, v in d.items():
         if k.startswith(eval_prefix):
-            new_d[prefix + "/eval/" + k[eval_prefix_len:]] = v
+            new_d[prefix + "-eval/" + k[eval_prefix_len:]] = v
         else:
-            new_d[prefix + "/train/" + k] = v
+            new_d[prefix + "-train/" + k] = v
     return new_d
 
 
@@ -77,8 +78,8 @@ class WandbPrefixCallback(WandbCallback):
 
             # define default x-axis (for latest wandb versions)
             if getattr(self._wandb, "define_metric", None):
-                self._wandb.define_metric(f"{self.prefix}/train/global_step")
-                self._wandb.define_metric("*", step_metric=f"{self.prefix}/train/global_step", step_sync=True)
+                self._wandb.define_metric(f"{self.prefix}-train/global_step")
+                self._wandb.define_metric("*", step_metric=f"{self.prefix}-train/global_step", step_sync=True)
 
             # keep track of model topology and gradients, unsupported on TPU
             if not is_torch_tpu_available() and os.getenv("WANDB_WATCH") != "false":
@@ -103,8 +104,8 @@ class WandbPrefixCallback(WandbCallback):
                     }
                     if not args.load_best_model_at_end
                     else {
-                        f"{self.prefix}/eval/{args.metric_for_best_model}": state.best_metric,
-                        f"{self.prefix}/train/total_floss": state.total_flos,
+                        f"{self.prefix}-eval/{args.metric_for_best_model}": state.best_metric,
+                        f"{self.prefix}-train/total_floss": state.total_flos,
                     }
                 )
                 artifact = self._wandb.Artifact(name=f"model-{self._wandb.run.id}", type="model", metadata=metadata)
@@ -121,4 +122,16 @@ class WandbPrefixCallback(WandbCallback):
             self.setup(args, state, model)
         if state.is_world_process_zero:
             logs = rewrite_logs(logs, self.prefix)
-            self._wandb.log({**logs, f"{self.prefix}/train/global_step": state.global_step})
+            self._wandb.log({**logs, f"{self.prefix}-train/global_step": state.global_step})
+
+
+class SBERTWandbCallback:
+    def __init__(self, prefix):
+        self.prefix = prefix
+    
+    def log(self, score, epoch, steps):
+        wandb.log({
+            f"{self.prefix}-eval/step": steps,
+            f"{self.prefix}-eval/epoch": epoch,
+            f"{self.prefix}-eval/score": score,
+        })

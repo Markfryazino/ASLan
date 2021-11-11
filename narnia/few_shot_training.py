@@ -9,9 +9,12 @@ from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concate
 import os
 import pandas as pd
 
-from environment import FewShotHandler, TokenizedDataset, UIDataset, UUDataset, STUUDataset
-from wandb_callback import WandbPrefixCallback
+from environment import FewShotHandler, TokenizedDataset, UIDataset, UUDataset, STUUDataset, \
+                        SBERTDataset, IEFormatDataset
+from wandb_callback import WandbPrefixCallback, SBERTWandbCallback
 
+from sentence_transformers import SentenceTransformer, LoggingHandler, losses, InputExample
+from sentence_transformers.evaluation import EmbeddingSimilarityEvaluator
 
 ACCURACY = load_metric("accuracy")
 PRECISION = load_metric("precision")
@@ -201,6 +204,22 @@ def setup_pretraining_bert(bert, tokenizer, seen_data, params=None):
     return bert, train_set, eval_set, test_set
 
 
+def setup_pretraining_knn_roberta(roberta, tokenizer, seen_data, params=None):
+    if params is None
+        params = {}
+    if "dataset" not in params:
+        params["dataset"] = {}
+
+    train_raw = SBERTDataset(seen_data["train"], **params["dataset"])
+    val_raw = SBERTDataset(seen_data["val"], **params["dataset"])
+    test_raw = SBERTDataset(seen_data["test"], **params["dataset"])
+
+    train = TokenizedDataset(train_raw, lambda x: x["source_text"] + "<sep>" + x["other_text"], tokenizer)
+    val = TokenizedDataset(val_raw, lambda x: x["source_text"] + "<sep>" + x["other_text"], tokenizer)
+    test = TokenizedDataset(test_raw, lambda x: x["source_text"] + "<sep>" + x["other_text"], tokenizer)
+    return roberta, train, val, test
+
+
 def setup_entailment_roberta(roberta, tokenizer, fshandler, params):
     support_ui = UIDataset(fshandler.known, fshandler.intents)
     test_ui = UIDataset(fshandler.unknown, fshandler.intents)
@@ -246,3 +265,39 @@ def setup_knn_roberta(roberta, tokenizer, fshandler, params):
                                 params["separator"] + x["text_unknown"], tokenizer, sample_size=params["test_size"])
 
     return roberta, support_set, test_set
+
+
+def sbert_training(model, train_data, prefix, eval_data=None, params=None):
+    if params is None:
+        params = {}
+    if "training" not in params:
+        params["training"] = {}
+    if "dataset" not in params:
+        params["dataset"] = {}
+    if "batch_size" not in params:
+        params["batch_size"] = 64
+
+    train = IEFormatDataset(SBERTDataset(train_data, **params["dataset"]))
+    evaluator = None
+    if eval_data is not None:
+        val = IEFormatDataset(SBERTDataset(eval_data, **params["dataset"]))
+        evaluator = EmbeddingSimilarityEvaluator.from_input_examples(val, name='sbert-val')
+    
+    train_dataloader = torch.utils.data.DataLoader(train, shuffle=True, batch_size=params["batch_size"])
+    train_loss = losses.CosineSimilarityLoss(model=model)
+    callback = SBERTWandbCallback(prefix)
+
+    training_args = {
+        "epochs": 5,
+        "scheduler": "WarmupLinear",
+        "output_path": "./results",
+        "evaluation_steps": 100,
+    }
+    args.update(params["training"])
+
+    sbert.fit(train_objectives=[(train_dataloader, train_loss)],
+          evaluator=evaluator,
+          callback=callback.log,
+          **training_args)
+
+    return sbert, {"eval_score": evaluator(sbert)}
