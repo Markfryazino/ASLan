@@ -393,6 +393,10 @@ class FewShotHandler():
         return self.eval_as_1nn(model, tokenizer, self.uu_dataset, batch_size, separator)
 
     def eval_stuu(self, model, tokenizer, sbert=None, top_k=10, batch_size=64, separator="<sep>"):
+        if (sbert is None) and ("sbert" in self.state):
+            self.log("Found sbert in fshandler state, using it")
+            sbert = self.state["sbert"]
+
         if (self.stuu_dataset is None) or (top_k != self.stuu_dataset.top_k):
             self.log("Reinitializing STUU dataset")
             self.stuu_dataset = STUUDataset(self.known, self.unknown, logger=self.logger, sbert=sbert, 
@@ -403,6 +407,10 @@ class FewShotHandler():
         return self.eval_as_1nn(model, tokenizer, self.stuu_dataset, batch_size, separator)
 
     def eval_pure_sbert(self, sbert=None):
+        if (sbert is None) and ("sbert" in self.state):
+            self.log("Found sbert in fshandler state, using it")
+            sbert = self.state["sbert"]
+
         if (self.stuu_dataset is None) or (self.stuu_dataset.top_k != 1):
             self.log("Reinitializing STUU dataset")
             self.stuu_dataset = STUUDataset(self.known, self.unknown, logger=self.logger, sbert=sbert, 

@@ -167,13 +167,17 @@ class FewShotLaboratory:
 
 
 def load_knn_roberta(fshandler, params):
-    tokenizer = RobertaTokenizerFast.from_pretrained('roberta-base')
-    tokenizer.add_special_tokens({"sep_token": "<sep>", "pad_token": "<pad>"})
-
+    tokenizer = RobertaTokenizerFast.from_pretrained(params["roberta_path"])
     model = RobertaForSequenceClassification.from_pretrained(params["roberta_path"]).to(fshandler.device)
     model.resize_token_embeddings(len(tokenizer))
     fshandler.state["knn_roberta_model"] = model
     fshandler.state["knn_roberta_tokenizer"] = tokenizer
+    return {}
+
+
+def load_sbert(fshandler, params):
+    model = SentenceTransformer(params["sbert_path"]).to(fshandler.device)
+    fshandler.state["sbert"] = model
     return {}
 
 
