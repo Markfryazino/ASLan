@@ -125,7 +125,7 @@ def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, l
 
     os.environ["WANDB_LOG_MODEL"] = str(log_model).lower()
 
-    model, train_set, eval_set, test_set = setup_function(model, tokenizer, seen_data, params)
+    model, support_set, test_set = setup_function(model, tokenizer, fshandler, params)
 
     mode_args = {
         "multiclass": [COMMON_ARGS.copy(), compute_multiclass_metrics, 

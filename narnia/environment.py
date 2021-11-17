@@ -401,6 +401,9 @@ class FewShotHandler():
         known_for_stuu = None
         if fake_known is not None:
             self.log("Using fake data for prediction!")
+            fake_known = fake_known.map(lambda x: encode_example(x, self.intent2label), batched=False,
+                                        load_from_cache_file=False)
+
             known_for_stuu = concatenate_datasets([self.known, fake_known])
         else:
             known_for_stuu = self.known
