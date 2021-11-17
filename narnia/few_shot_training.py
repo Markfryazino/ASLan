@@ -246,6 +246,24 @@ def setup_pretraining_naive_gpt2(gpt2, tokenizer, seen_data, params=None):
     return gpt2, train, val, test
 
 
+def setup_pretraining_similarity_gpt2(gpt2, tokenizer, seen_data, params=None):
+    def template(source, other, label):
+        return f"<start>{source}<{label}>{other}<end>"
+
+    if "dataset" not in params:
+        params["dataset"] = {}
+
+    raw_train = SBERTDataset(seen_data["train"], **params["dataset"])
+    raw_val = SBERTDataset(seen_data["val"], **params["dataset"])
+    raw_test = SBERTDataset(seen_data["test"], **params["dataset"])
+
+    train = TokenizedDataset(raw_train, lambda x: template(x["source"], x["other"], x["label"]), tokenizer)
+    val = TokenizedDataset(raw_val, lambda x: template(x["source"], x["other"], x["label"]), tokenizer)
+    test = TokenizedDataset(raw_test, lambda x: template(x["source"], x["other"], x["label"]), tokenizer)
+
+    return gpt2, train, val, test
+
+
 def setup_entailment_roberta(roberta, tokenizer, fshandler, params):
     support_ui = UIDataset(fshandler.known, fshandler.intents)
     test_ui = UIDataset(fshandler.unknown, fshandler.intents)
