@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import json
 from transformers import GPT2Tokenizer, GPT2LMHeadModel, Trainer, TrainingArguments, DataCollatorForLanguageModeling
-from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concatenate_datasets
+from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concatenate_datasets, Dataset
 import os
 import pandas as pd
 import random
@@ -146,3 +146,63 @@ class GenerationTypedDataset(torch.utils.data.Dataset):
         }
 
 
+def generate_response(model, tokenizer, intent):
+    prompt = intent + "<sep>"
+    input_ids = tokenizer.encode(prompt, return_tensors="pt").to('cuda')
+
+    generated = model.generate(
+        input_ids,
+        pad_token_id=tokenizer.pad_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        max_length=50,
+        do_sample=True,
+        temperature=.8
+    )
+
+    result = tokenizer.decode(generated[0], skip_special_tokens=False)
+    return result.split("<sep>")[-1].replace("<end>", "").strip()
+
+
+def gpt2_generate_fake_knowns(model, tokenizer, intents, intent_size):
+    res_intents, res_texts = [], []
+    with tqdm(total=len(intents) * intent_size) as pbar:
+        for intent in intents:
+            for i in range(intent_size):
+                res_intents.append(intent)
+                res_texts.append(generate_response(model, tokenizer, intent))
+                pbar.update(1)
+    return Dataset.from_dict({
+        "intent": res_intents,
+        "text": res_texts
+    }).shuffle(load_from_cache_file=False)
+
+
+def generate_response(model, tokenizer, intent):
+    prompt = "<start>" + intent + "<sep>"
+    input_ids = tokenizer.encode(prompt, return_tensors="pt").to('cuda')
+
+    generated = model.generate(
+        input_ids,
+        pad_token_id=tokenizer.pad_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        max_length=50,
+        do_sample=True,
+        temperature=.8
+    )
+
+    result = tokenizer.decode(generated[0], skip_special_tokens=False)
+    return result.split("<sep>")[-1].replace("<end>", "").strip()
+
+
+def gpt2_generate_fake_knowns(model, tokenizer, intents, intent_size):
+    res_intents, res_texts = [], []
+    with tqdm(total=len(intents) * intent_size) as pbar:
+        for intent in intents:
+            for i in range(intent_size):
+                res_intents.append(intent)
+                res_texts.append(generate_response(model, tokenizer, intent))
+                pbar.update(1)
+    return Dataset.from_dict({
+        "intent": res_intents,
+        "text": res_texts
+    }).shuffle(load_from_cache_file=False)

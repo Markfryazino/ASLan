@@ -15,6 +15,7 @@ from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_rober
                               setup_pretraining_knn_roberta, setup_pretraining_naive_gpt2
 from utils import set_random_seed, get_timestamp_str, append_prefix
 from sentence_transformers import SentenceTransformer
+from generation import gpt2_generate_fake_knowns
 
 
 set_caching_enabled(False)
@@ -176,6 +177,15 @@ def load_knn_roberta(fshandler, params):
     return {}
 
 
+def load_gpt2(fshandler, params):
+    tokenizer = GPT2TokenizerFast.from_pretrained(params["gpt2_path"])
+    model = GPT2LMHeadModel.from_pretrained(params["gpt2_path"]).to(fshandler.device)
+    model.resize_token_embeddings(len(tokenizer))
+    fshandler.state["gpt2_model"] = model
+    fshandler.state["gpt2_tokenizer"] = tokenizer
+    return {}
+
+
 def load_sbert(fshandler, params):
     model = SentenceTransformer(params["sbert_path"]).to(fshandler.device)
     fshandler.state["sbert"] = model
@@ -305,7 +315,11 @@ def evaluate_knn_roberta(fshandler, params):
     model = fshandler.state["knn_roberta_model"]
     tokenizer = fshandler.state["knn_roberta_tokenizer"]
 
-    eval_result = fshandler.eval_stuu(model, tokenizer, **settings)
+    fakes = None
+    if ("use_fakes" in params) and params["use_fakes"]:
+        fakes = fshandler.state["fake_known"]
+
+    eval_result = fshandler.eval_stuu(model, tokenizer, fakes, **settings)
     if "verbose" not in params or not params["verbose"]:
         del eval_result["details"]
     return eval_result
@@ -317,3 +331,13 @@ def evaluate_pure_sbert(fshandler, params):
         sbert = params["sbert"]
     eval_result = fshandler.eval_pure_sbert(sbert=sbert)
     return eval_result
+
+
+def synthesize_fake_knowns(fshandler, params):
+    intent_size = 10
+    if "intent_size" in params:
+        intent_size = params["intent_size"]
+    fake_dataset = gpt2_generate_fake_knowns(fshandler.state["gpt2_model"], fshandler.state["gpt2_tokenizer"],
+                                             fshandler.unknown.unique("intent"), intent_size)
+    fshandler.state["fake_known"] = fake_dataset
+    return {}

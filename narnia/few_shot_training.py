@@ -4,7 +4,7 @@ import torch
 import json
 from transformers import Trainer, TrainingArguments, DataCollatorWithPadding, \
                          BertTokenizerFast, BertForSequenceClassification, \
-                         RobertaTokenizerFast, RobertaForSequenceClassification
+                         RobertaTokenizerFast, RobertaForSequenceClassification, DataCollatorForLanguageModeling
 from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concatenate_datasets
 import os
 import pandas as pd
@@ -125,16 +125,16 @@ def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, l
 
     os.environ["WANDB_LOG_MODEL"] = str(log_model).lower()
 
-    collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
-    model, support_set, test_set = setup_function(model, tokenizer, fshandler, params)
-    num_labels = fshandler.intent_num
+    model, train_set, eval_set, test_set = setup_function(model, tokenizer, seen_data, params)
 
-   mode_args = {
-        "multiclass": [COMMON_ARGS.copy(), compute_multiclass_metrics],
-        "binary": [COMMON_ARGS.copy(), compute_metrics],
-        "generation": [GENERATION_ARGS.copy(), None]
+    mode_args = {
+        "multiclass": [COMMON_ARGS.copy(), compute_multiclass_metrics, 
+                       DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")],
+        "binary": [COMMON_ARGS.copy(), compute_metrics, 
+                   DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")],
+        "generation": [GENERATION_ARGS.copy(), None, DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)],
     }
-    settings, computer = mode_args[mode]
+    settings, computer, collator = mode_args[mode]
     settings.update(params["training"])
 
     trainer = Trainer(
@@ -164,22 +164,23 @@ def laboratory_pretraining(model, tokenizer, seen_data, setup_function, prefix, 
 
     os.environ["WANDB_LOG_MODEL"] = str(log_model).lower()
 
-    collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
     model, train_set, eval_set, test_set = setup_function(model, tokenizer, seen_data, params)
 
     mode_args = {
-        "multiclass": [COMMON_ARGS.copy(), compute_multiclass_metrics],
-        "binary": [COMMON_ARGS.copy(), compute_metrics],
-        "generation": [GENERATION_ARGS.copy(), None]
+        "multiclass": [COMMON_ARGS.copy(), compute_multiclass_metrics, 
+                       DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")],
+        "binary": [COMMON_ARGS.copy(), compute_metrics, 
+                   DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")],
+        "generation": [GENERATION_ARGS.copy(), None, DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)],
     }
-    settings, computer = mode_args[mode]
+    settings, computer, collator = mode_args[mode]
     settings.update(params["training"])
 
     trainer = Trainer(
         model=model,
         args=TrainingArguments(**settings), 
         train_dataset=train_set,
-        eval_dataset=test_set,
+        eval_dataset=eval_set,
         data_collator=collator,
         compute_metrics=computer,
         callbacks=[WandbPrefixCallback(prefix)]
@@ -236,9 +237,12 @@ def setup_pretraining_knn_roberta(roberta, tokenizer, seen_data, params=None):
 
 
 def setup_pretraining_naive_gpt2(gpt2, tokenizer, seen_data, params=None):
-    train = TokenizedDataset(seen_data["train"], lambda x: x["intent"] + "<sep>" + x["text"], tokenizer)
-    val = TokenizedDataset(seen_data["val"], lambda x: x["intent"] + "<sep>" + x["text"], tokenizer)
-    test = TokenizedDataset(seen_data["test"], lambda x: x["intent"] + "<sep>" + x["text"], tokenizer)
+    train = TokenizedDataset(seen_data["train"], lambda x: "<start>" + x["intent"] + "<sep>" + x["text"] + "<end>",
+                             tokenizer)
+    val = TokenizedDataset(seen_data["val"], lambda x: "<start>" + x["intent"] + "<sep>" + x["text"] + "<end>",
+                           tokenizer)
+    test = TokenizedDataset(seen_data["test"], lambda x: "<start>" + x["intent"] + "<sep>" + x["text"] + "<end>",
+                            tokenizer)
     return gpt2, train, val, test
 
 

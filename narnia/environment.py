@@ -392,17 +392,21 @@ class FewShotHandler():
     def eval_uu(self, model, tokenizer, batch_size=64, separator="<sep>"):
         return self.eval_as_1nn(model, tokenizer, self.uu_dataset, batch_size, separator)
 
-    def eval_stuu(self, model, tokenizer, sbert=None, top_k=10, batch_size=64, separator="<sep>"):
+    def eval_stuu(self, model, tokenizer, fake_known=None, sbert=None, top_k=10, batch_size=64, separator="<sep>"):
         if (sbert is None) and ("sbert" in self.state):
             self.log("Found sbert in fshandler state, using it")
             sbert = self.state["sbert"]
 
-        if (self.stuu_dataset is None) or (top_k != self.stuu_dataset.top_k):
-            self.log("Reinitializing STUU dataset")
-            self.stuu_dataset = STUUDataset(self.known, self.unknown, logger=self.logger, sbert=sbert, 
-                                            top_k=top_k, device=self.device)
+        self.log("Reinitializing STUU dataset")
+        known_for_stuu = None
+        if fake_known is not None:
+            self.log("Using fake data for prediction!")
+            known_for_stuu = concatenate_datasets([self.known, fake_known])
         else:
-            self.log("Using cached STUU dataset")
+            known_for_stuu = self.known
+
+        self.stuu_dataset = STUUDataset(known_for_stuu, self.unknown, logger=self.logger, sbert=sbert, 
+                                        top_k=top_k, device=self.device)
     
         return self.eval_as_1nn(model, tokenizer, self.stuu_dataset, batch_size, separator)
 
