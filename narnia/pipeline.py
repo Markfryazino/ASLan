@@ -45,7 +45,11 @@ class FewShotLaboratory:
         params: Dict = {},
         root_path: str = "artifacts/"
     ):
-        self.config = {}
+        self.config = {
+            "modules": [name for name, func in modules],
+            "pretraining_modules": [name for name, func in pretraining_modules],
+            "module_params": params
+        }
         self.modules = modules
         self.pretraining_modules = pretraining_modules
         self.artifacts = artifacts
@@ -286,7 +290,7 @@ def pretrain_similarity_gpt2(state, params):
     model = GPT2LMHeadModel.from_pretrained("gpt2")
     model.resize_token_embeddings(len(tokenizer))
 
-    model, metrics = laboratory_pretraining(model, tokenizer, state["seen_data"], setup_pretraining_simiarity_gpt2, 
+    model, metrics = laboratory_pretraining(model, tokenizer, state["seen_data"], setup_pretraining_similarity_gpt2, 
                                             prefix=block_name, params=params, mode="generation")
 
     state["similarity_gpt2_model"] = model
