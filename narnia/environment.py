@@ -372,12 +372,15 @@ class FewShotHandler():
         step = len(dataset) // len(self.unknown)
         correct = 0
 
+        log_dataset = dataset.map(lambda x, idx: {"score": predictions[idx].item(), "winner": False, **x},
+                                  with_indices=True, load_from_cache_file=False)
         details = []
         for idx in trange(0, len(dataset), step):
             current_prediction = torch.argmax(predictions[idx:idx + step])
             correct += dataset[idx + current_prediction.item()]["label"]
 
             log_idx = idx + current_prediction.item()
+            log_dataset[log_idx]["winner"] = True
             current_details = {
                 "text_unknown": dataset[log_idx]["text_unknown"],
                 "text_known": dataset[log_idx]["text_known"],
@@ -387,6 +390,7 @@ class FewShotHandler():
             }
             details.append(current_details)
 
+        safe.state["eval_log_dataset"] = log_dataset
         return {"accuracy": correct / len(self.unknown), "details": details}
 
     def eval_uu(self, model, tokenizer, batch_size=64, separator="<sep>"):
