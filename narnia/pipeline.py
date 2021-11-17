@@ -5,13 +5,14 @@ import logging
 from pathlib import Path
 
 import torch
-from transformers import RobertaTokenizerFast, RobertaForSequenceClassification
+from transformers import RobertaTokenizerFast, RobertaForSequenceClassification, \
+                         GPT2TokenizerFast, GPT2LMHeadModel
 from datasets import set_caching_enabled, ClassLabel
 
 from environment import FewShotHandler, load_from_memory, set_generator, load_unseen, load_split_dataset
 from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_roberta, setup_entailment_roberta, \
                               laboratory_pretraining, setup_pretraining_bert, sbert_training, \
-                              setup_pretraining_knn_roberta
+                              setup_pretraining_knn_roberta, setup_pretraining_naive_gpt2
 from utils import set_random_seed, get_timestamp_str, append_prefix
 from sentence_transformers import SentenceTransformer
 
@@ -212,6 +213,7 @@ def save_sbert(state, params):
     wandb.log_artifact(my_data)
     return {}
 
+
 def pretrain_naive_roberta(state, params):
     block_name = params["block_name"]
     del params["block_name"] 
@@ -242,6 +244,24 @@ def pretrain_sbert(state, params):
     state["sbert"] = sbert
     return metrics
 
+
+def pretrain_naive_gpt2(state, params):
+    block_name = params["block_name"]
+    del params["block_name"]
+
+    tokenizer = GPT2TokenizerFast.from_pretrained('gpt2', truncation=True, padding=True)
+    tokenizer.add_special_tokens({"sep_token": "<sep>", "pad_token": "<pad>", "bos_token": "<start>",
+                                  "eos_token": "<end>", "unk_token": "<unk>"})
+    model = GPT2LMHeadModel.from_pretrained("gpt2")
+    model.resize_token_embeddings(len(tokenizer))
+
+    model, metrics = laboratory_pretraining(model, tokenizer, state["seen_data"], setup_pretraining_naive_gpt2, 
+                                            prefix=block_name, params=params, mode="generation")
+
+    state["naive_gpt2_model"] = model
+    state["naive_gpt2_tokenizer"] = tokenizer
+
+    return metrics
 
 def finetune_sbert(fshandler, params):
     block_name = params["block_name"]

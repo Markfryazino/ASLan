@@ -16,6 +16,9 @@ from wandb_callback import WandbPrefixCallback, SBERTWandbCallback
 from sentence_transformers import SentenceTransformer, LoggingHandler, losses, InputExample
 from sentence_transformers.evaluation import EmbeddingSimilarityEvaluator
 
+from generation import GENERATION_ARGS
+
+
 ACCURACY = load_metric("accuracy")
 PRECISION = load_metric("precision")
 RECALL = load_metric("recall")
@@ -113,7 +116,8 @@ def model_finetuning(model, tokenizer, fshandler, setup_function, use_artifacts,
     return model
 
 
-def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, log_model=False, params=None):
+def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, log_model=False, params=None,
+                          mode="binary"):
     if params is None:
         params = {}
     if "training" not in params:
@@ -125,7 +129,12 @@ def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, l
     model, support_set, test_set = setup_function(model, tokenizer, fshandler, params)
     num_labels = fshandler.intent_num
 
-    settings = COMMON_ARGS.copy()
+   mode_args = {
+        "multiclass": [COMMON_ARGS.copy(), compute_multiclass_metrics],
+        "binary": [COMMON_ARGS.copy(), compute_metrics],
+        "generation": [GENERATION_ARGS.copy(), None]
+    }
+    settings, computer = mode_args[mode]
     settings.update(params["training"])
 
     trainer = Trainer(
@@ -134,7 +143,7 @@ def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, l
         train_dataset=support_set,
         eval_dataset=test_set,
         data_collator=collator,
-        compute_metrics=compute_metrics,
+        compute_metrics=computer,
         callbacks=[WandbPrefixCallback(prefix)]
     )
 
@@ -146,7 +155,8 @@ def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, l
     return model, final_metrics
 
 
-def laboratory_pretraining(model, tokenizer, seen_data, setup_function, prefix, log_model=False, params=None):
+def laboratory_pretraining(model, tokenizer, seen_data, setup_function, prefix, log_model=False, params=None,
+                           mode="multiclass"):
     if params is None:
         params = {}
     if "training" not in params:
@@ -157,7 +167,12 @@ def laboratory_pretraining(model, tokenizer, seen_data, setup_function, prefix, 
     collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
     model, train_set, eval_set, test_set = setup_function(model, tokenizer, seen_data, params)
 
-    settings = COMMON_ARGS.copy()
+    mode_args = {
+        "multiclass": [COMMON_ARGS.copy(), compute_multiclass_metrics],
+        "binary": [COMMON_ARGS.copy(), compute_metrics],
+        "generation": [GENERATION_ARGS.copy(), None]
+    }
+    settings, computer = mode_args[mode]
     settings.update(params["training"])
 
     trainer = Trainer(
@@ -166,7 +181,7 @@ def laboratory_pretraining(model, tokenizer, seen_data, setup_function, prefix, 
         train_dataset=train_set,
         eval_dataset=test_set,
         data_collator=collator,
-        compute_metrics=compute_multiclass_metrics,
+        compute_metrics=computer,
         callbacks=[WandbPrefixCallback(prefix)]
     )
 
@@ -218,6 +233,13 @@ def setup_pretraining_knn_roberta(roberta, tokenizer, seen_data, params=None):
     val = TokenizedDataset(val_raw, lambda x: x["source_text"] + "<sep>" + x["other_text"], tokenizer)
     test = TokenizedDataset(test_raw, lambda x: x["source_text"] + "<sep>" + x["other_text"], tokenizer)
     return roberta, train, val, test
+
+
+def setup_pretraining_naive_gpt2(gpt2, tokenizer, seen_data, params=None):
+    train = TokenizedDataset(seen_data["train"], lambda x: x["intent"] + "<sep>" + x["text"], tokenizer)
+    val = TokenizedDataset(seen_data["val"], lambda x: x["intent"] + "<sep>" + x["text"], tokenizer)
+    test = TokenizedDataset(seen_data["test"], lambda x: x["intent"] + "<sep>" + x["text"], tokenizer)
+    return gpt2, train, val, test
 
 
 def setup_entailment_roberta(roberta, tokenizer, fshandler, params):
