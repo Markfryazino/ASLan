@@ -264,10 +264,11 @@ class IEFormatDataset(torch.utils.data.Dataset):
 
 
 class TokenizedDataset(torch.utils.data.Dataset):
-    def __init__(self, source_dataset, builder, tokenizer, sample_size=None):
+    def __init__(self, source_dataset, builder, tokenizer, sample_size=None, no_label=False):
         self.source = source_dataset
         self.builder = builder
         self.tokenizer = tokenizer
+        self.no_label = no_label
 
         if type(sample_size) == float:
             sample_size = int(sample_size * len(self.source))
@@ -282,10 +283,44 @@ class TokenizedDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         source_example = self.source[int(self.use_idxs[idx])]
         tokenized = self.tokenizer(self.builder(source_example))
-        if "label" in source_example:
+        if ("label" in source_example) and not no_label:
             tokenized.update({"label": source_example["label"]})
         return tokenized
     
+
+def analyze_log_dataset(data, top_k):
+    results = []
+    for start in trange(0, len(data), top_k):
+        winner_idx = start + np.where(data[start:start + top_k]["winner"])[0].item()
+        current = data[winner_idx]
+        current["correct"] = bool(data[winner_idx]["label"])
+        current["number_of_correct"] = sum(data[start:start + top_k]["label"])
+        current["intent_distribution"] = dict(Counter(data[start:start + top_k]["intent_known"]))
+        current["intent_scores"] = {}
+        score_pairs = []
+        for intent in current["intent_distribution"]:
+            scores = np.array(data[start:start + top_k]["score"])[np.where(np.array(data[start:start + \
+                        top_k]["intent_known"]) == intent)[0]]
+            texts = np.array(data[start:start + top_k]["text_known"])[np.where(np.array(data[start:start + \
+                        top_k]["intent_known"]) == intent)[0]]
+            current["intent_scores"][intent] = {
+                "max": scores.max(),
+                "mean": scores.mean(),
+                "num": len(scores),
+                "argmax": texts[scores.argmax()]
+            }
+            score_pairs.append((scores.max(), intent))
+        if current["number_of_correct"] == 0:
+            current["true_rank"] = 1000000
+        else:
+            score_pairs.sort(reverse=True)
+            for idx, (val, key) in enumerate(score_pairs):
+                if key == current["intent_unknown"]:
+                    current["true_rank"] = idx
+
+        results.append(current)
+    return results
+
 
 class FewShotHandler():
     def __init__(self, unknown, known=None, device="cuda", logger=print):
@@ -404,6 +439,11 @@ class FewShotHandler():
 
         self.state["eval_log_dataset"] = Dataset.from_dict(log_dataset)
         self.state["eval_details"] = details
+        self.state["eval_dataset_analysis"] = analyze_log_dataset(self.state["eval_log_dataset"], step)
+        with open("./results/eval_analysis.json", "w") as f:
+            json.dump(self.state["eval_dataset_analysis"], f)
+        wandb.save("./results/eval_analysis.json")
+
         return {"accuracy": correct / len(self.unknown), "details": details}
 
     def eval_uu(self, model, tokenizer, batch_size=64, separator="<sep>"):
