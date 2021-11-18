@@ -4,7 +4,7 @@ import scipy
 import scipy.spatial.distance
 import torch
 import json
-from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concatenate_datasets
+from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concatenate_datasets, Dataset
 from transformers import DataCollatorWithPadding
 from sentence_transformers import SentenceTransformer, InputExample
 import os
@@ -372,15 +372,25 @@ class FewShotHandler():
         step = len(dataset) // len(self.unknown)
         correct = 0
 
-        log_dataset = dataset.map(lambda x, idx: {"score": predictions[idx].item(), "winner": False, **x},
-                                  with_indices=True, load_from_cache_file=False)
+        log_dataset = {
+            "score": [],
+            "winner": [],
+        }
+        for idx, data in enumerate(dataset):
+            for key, val in data.items():
+                if key not in log_dataset:
+                    log_dataset[key] = []
+                log_dataset[key].append(val)
+                log_dataset["score"].append(predictions[idx].item())
+                log_dataset["winner"].append(False)
+
         details = []
         for idx in trange(0, len(dataset), step):
             current_prediction = torch.argmax(predictions[idx:idx + step])
             correct += dataset[idx + current_prediction.item()]["label"]
 
             log_idx = idx + current_prediction.item()
-            log_dataset[log_idx]["winner"] = True
+            log_dataset["winner"][log_idx] = True
             current_details = {
                 "text_unknown": dataset[log_idx]["text_unknown"],
                 "text_known": dataset[log_idx]["text_known"],
@@ -390,7 +400,7 @@ class FewShotHandler():
             }
             details.append(current_details)
 
-        safe.state["eval_log_dataset"] = log_dataset
+        self.state["eval_log_dataset"] = Dataset.from_dict(log_dataset)
         return {"accuracy": correct / len(self.unknown), "details": details}
 
     def eval_uu(self, model, tokenizer, batch_size=64, separator="<sep>"):
