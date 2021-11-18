@@ -257,12 +257,12 @@ def setup_pretraining_similarity_gpt2(gpt2, tokenizer, seen_data, params=None):
     raw_val = SBERTDataset(seen_data["val"], **params["dataset"])
     raw_test = SBERTDataset(seen_data["test"], **params["dataset"])
 
-    train = TokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"], x["label"], 
-                             no_label=True), tokenizer)
-    val = TokenizedDataset(raw_val, lambda x: template(x["source_text"], x["other_text"], x["label"], 
-                           no_label=True), tokenizer)
-    test = TokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"], x["label"], 
-                            no_label=True), tokenizer)
+    train = TokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"], x["label"]), tokenizer,
+                             no_label=True)
+    val = TokenizedDataset(raw_val, lambda x: template(x["source_text"], x["other_text"], x["label"]), tokenizer,
+                           no_label=True)
+    test = TokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"], x["label"]), tokenizer,
+                            no_label=True)
 
     return gpt2, train, val, test
 

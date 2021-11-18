@@ -283,7 +283,7 @@ class TokenizedDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         source_example = self.source[int(self.use_idxs[idx])]
         tokenized = self.tokenizer(self.builder(source_example))
-        if ("label" in source_example) and not no_label:
+        if ("label" in source_example) and not self.no_label:
             tokenized.update({"label": source_example["label"]})
         return tokenized
     
