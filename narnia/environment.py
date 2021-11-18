@@ -156,7 +156,9 @@ class STUUDataset(torch.utils.data.Dataset):
         return {
             "text_unknown": self.unknown[un_id]["text"],
             "text_known": self.known[kn_id]["text"],
-            "label": int(self.unknown[un_id]["intent"] == self.known[kn_id]["intent"])
+            "label": int(self.unknown[un_id]["intent"] == self.known[kn_id]["intent"]),
+            "intent_unknown": self.unknown[un_id]["intent"],
+            "intent_known": self.known[kn_id]["intent"]
         }
 
 
@@ -381,8 +383,8 @@ class FewShotHandler():
                 if key not in log_dataset:
                     log_dataset[key] = []
                 log_dataset[key].append(val)
-                log_dataset["score"].append(predictions[idx].item())
-                log_dataset["winner"].append(False)
+            log_dataset["score"].append(predictions[idx].item())
+            log_dataset["winner"].append(False)
 
         details = []
         for idx in trange(0, len(dataset), step):
@@ -401,6 +403,7 @@ class FewShotHandler():
             details.append(current_details)
 
         self.state["eval_log_dataset"] = Dataset.from_dict(log_dataset)
+        self.state["eval_details"] = details
         return {"accuracy": correct / len(self.unknown), "details": details}
 
     def eval_uu(self, model, tokenizer, batch_size=64, separator="<sep>"):
