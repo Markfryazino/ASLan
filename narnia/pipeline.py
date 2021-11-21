@@ -337,6 +337,9 @@ def encode_labels(state, params):
 
 
 def evaluate_knn_roberta(fshandler, params):
+    if "subsample" in params:
+        fshandler.known = fshandler.deep_known.select(list(range(params["subsample"])))
+
     settings = {key: val for key, val in params.items() if key in ["top_k", "batch_size"]}
     model = fshandler.state["knn_roberta_model"]
     tokenizer = fshandler.state["knn_roberta_tokenizer"]
@@ -348,6 +351,10 @@ def evaluate_knn_roberta(fshandler, params):
     eval_result = fshandler.eval_stuu(model, tokenizer, fakes, **settings)
     if "verbose" not in params or not params["verbose"]:
         del eval_result["details"]
+
+    if "subsample" in params:
+        fshandler.known = fshandler.deep_known.map(lambda x: x, load_from_cache_file=False)
+
     return eval_result
 
 

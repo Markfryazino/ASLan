@@ -325,6 +325,7 @@ def analyze_log_dataset(data, top_k):
 class FewShotHandler():
     def __init__(self, unknown, known=None, device="cuda", logger=print):
         self.known = known
+        self.deep_known = known.map(lambda x: x, load_from_cache_file=False)
         self.unknown = unknown
         
         self.intents = self.unknown.unique("intent")

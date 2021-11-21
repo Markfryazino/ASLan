@@ -123,6 +123,9 @@ def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, l
     if "training" not in params:
         params["training"] = {}
 
+    if "subsample" in params:
+        fshandler.known = fshandler.deep_known.select(list(range(params["subsample"])))
+
     os.environ["WANDB_LOG_MODEL"] = str(log_model).lower()
 
     model, support_set, test_set = setup_function(model, tokenizer, fshandler, params)
@@ -151,6 +154,9 @@ def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, l
 
     final_metrics = trainer.evaluate(support_set, metric_key_prefix="train")
     final_metrics.update(trainer.evaluate(test_set, metric_key_prefix="test"))
+
+    if "subsample" in params:
+        fshandler.known = fshandler.deep_known.map(lambda x: x, load_from_cache_file=False)
 
     return model, final_metrics
 
