@@ -49,7 +49,9 @@ class FewShotLaboratory:
         self.config = {
             "modules": [name for name, func in modules],
             "pretraining_modules": [name for name, func in pretraining_modules],
-            "module_params": params
+            "module_params": params,
+            "support_size": support_size,
+            "extra_size": extra_size
         }
         self.modules = modules
         self.pretraining_modules = pretraining_modules

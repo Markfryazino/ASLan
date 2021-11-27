@@ -373,6 +373,7 @@ class FewShotHandler():
 
     def replace_knowns(self):
         self.known, self.extra_known = self.extra_known, self.known
+        self.log(f"Knowns replaced! Len of known: {len(self.known)}, len of extra: {len(self.extra_known)}")
 
     def log(self, text):
         self.logger(text)
