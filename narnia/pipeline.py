@@ -40,6 +40,7 @@ class FewShotLaboratory:
         pretraining_modules: List[Tuple[str, Callable[[Dict, Dict], Dict]]],
         artifacts: Dict[str, str],
         support_size: int = 10,
+        extra_size: int = 0,
         logger: Callable[[str], None] = print,
         wandb_args: Dict = {},
         params: Dict = {},
@@ -54,6 +55,7 @@ class FewShotLaboratory:
         self.pretraining_modules = pretraining_modules
         self.artifacts = artifacts
         self.support_size = support_size
+        self.extra_size = extra_size
         self.logger = logger
         self.wandb_args = wandb_args
         self.params = params
@@ -75,7 +77,7 @@ class FewShotLaboratory:
         self.logger(f"Setting dataset {dataset}, split {split}")
         self.seen, self.unseen = load_split_dataset(self.root_path, dataset, split)
         self.state["seen_data"] = self.seen
-        self.generator = set_generator(self.unseen, support_size=self.support_size)
+        self.generator = set_generator(self.unseen, support_size=self.support_size, extra_size=self.extra_size)
         self.config.update({"dataset": dataset, "split": split})
 
     def run_series(self, dataset, random_states, use_negative_split=False):
@@ -145,8 +147,13 @@ class FewShotLaboratory:
         self.logger(f"Starting run with random_state = {random_state}")
 
         set_random_seed(random_state)
-        known, unknown = next(self.generator)
-        fshandler = FewShotHandler(unknown, known, device=self.device, logger=self.logger)
+        if self.extra_size > 0:
+            known, extra, unknown = next(self.generator)
+            fshandler = FewShotHandler(unknown, known, device=self.device, logger=self.logger, extra_known=extra)
+        else:
+            known, unknown = next(self.generator)
+            fshandler = FewShotHandler(unknown, known, device=self.device, logger=self.logger)     
+
         fshandler.state.update(self.state)
 
         run_metrics = {}
@@ -171,6 +178,11 @@ class FewShotLaboratory:
         wandb.finish()
 
         return run_metrics, fshandler
+
+
+def replace_knowns(fshandler, params):
+    fshandler.replace_knowns()
+    return {}
 
 
 def load_knn_roberta(fshandler, params):
@@ -337,9 +349,6 @@ def encode_labels(state, params):
 
 
 def evaluate_knn_roberta(fshandler, params):
-    if "subsample" in params:
-        fshandler.known = fshandler.deep_known.select(list(range(params["subsample"])))
-
     settings = {key: val for key, val in params.items() if key in ["top_k", "batch_size"]}
     model = fshandler.state["knn_roberta_model"]
     tokenizer = fshandler.state["knn_roberta_tokenizer"]
@@ -351,9 +360,6 @@ def evaluate_knn_roberta(fshandler, params):
     eval_result = fshandler.eval_stuu(model, tokenizer, fakes, **settings)
     if "verbose" not in params or not params["verbose"]:
         del eval_result["details"]
-
-    if "subsample" in params:
-        fshandler.known = fshandler.deep_known.map(lambda x: x, load_from_cache_file=False)
 
     return eval_result
 

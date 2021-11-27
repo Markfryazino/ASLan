@@ -11,6 +11,7 @@ import os
 import pandas as pd
 from tqdm.auto import tqdm, trange
 from datasets import set_caching_enabled
+from collections import Counter
 
 
 set_caching_enabled(False)
@@ -55,7 +56,7 @@ def load_unseen(root_path="artifacts/CLINC150:v5"):
     return raw["train"]
 
 
-def set_generator(dataset, support_size=10, shuffle=True):
+def set_generator(dataset, support_size=10, shuffle=True, extra_size=0):
     unique_intents = dataset.unique("intent")
     full_intents = np.array(dataset["intent"])
     intent_idxs = {}
@@ -64,18 +65,29 @@ def set_generator(dataset, support_size=10, shuffle=True):
         intent_idxs[intent] = np.where(full_intents == intent)[0]
 
     while True:
-        train, test = [], []
+        train, extra, test = [], [], []
         for intent in unique_intents:
             train_ids = np.random.choice(intent_idxs[intent], support_size, replace=False)
             test_ids = list(set(intent_idxs[intent]) - set(train_ids))
             train.append(dataset.select(train_ids))
             test.append(dataset.select(test_ids))
 
-        if shuffle:
+            if extra_size > 0:
+                extra_ids = np.random.choice(train_ids, extra_size, replace=False)
+                extra.append(dataset.select(extra_ids))
+
+        if (extra_size == 0) and shuffle:
             yield concatenate_datasets(train).shuffle(load_from_cache_file=False).flatten_indices(), \
                   concatenate_datasets(test).shuffle(load_from_cache_file=False).flatten_indices()
-        else:
+        elif extra_size == 0:
             yield concatenate_datasets(train).flatten_indices(), concatenate_datasets(test).flatten_indices()
+        elif (extra_size > 0) and shuffle:
+            yield concatenate_datasets(train).shuffle(load_from_cache_file=False).flatten_indices(), \
+                  concatenate_datasets(extra).shuffle(load_from_cache_file=False).flatten_indices(), \
+                  concatenate_datasets(test).shuffle(load_from_cache_file=False).flatten_indices()
+        else:
+            yield concatenate_datasets(train).flatten_indices(), concatenate_datasets(extra).flatten_indices(), \
+                  concatenate_datasets(test).flatten_indices()
 
 
 def encode_example(example, mapping):
@@ -323,10 +335,10 @@ def analyze_log_dataset(data, top_k):
 
 
 class FewShotHandler():
-    def __init__(self, unknown, known=None, device="cuda", logger=print):
+    def __init__(self, unknown, known=None, device="cuda", logger=print, extra_known=None):
         self.known = known
-        self.deep_known = known.map(lambda x: x, load_from_cache_file=False)
         self.unknown = unknown
+        self.extra_known = extra_known
         
         self.intents = self.unknown.unique("intent")
         self.intent_num = len(self.intents)
@@ -358,6 +370,9 @@ class FewShotHandler():
         self.logger = logger
 
         self.state = {}
+
+    def replace_knowns(self):
+        self.known, self.extra_known = self.extra_known, self.known
 
     def log(self, text):
         self.logger(text)
