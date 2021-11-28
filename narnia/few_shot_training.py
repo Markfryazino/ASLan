@@ -318,6 +318,9 @@ def setup_knn_roberta(roberta, tokenizer, fshandler, params):
         support_uu = STUUDataset(fshandler.known, fshandler.known, top_k=params["top_k"], device=device)
         test_uu = STUUDataset(fshandler.known, fshandler.val_known, top_k=params["top_k"], device=device)
 
+    if ("use_fakes" in params) and params["use_fakes"] and ("fake_similar" in fshandler.state):
+        support_uu = torch.utils.data.ConcatDataset([support_uu, fshandler.state["fake_similar"]])
+
     if "separator" not in params:
         params["separator"] = "<sep>"
     if "test_size" not in params:

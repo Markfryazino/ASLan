@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 from transformers import RobertaTokenizerFast, RobertaForSequenceClassification, \
                          GPT2TokenizerFast, GPT2LMHeadModel
-from datasets import set_caching_enabled, ClassLabel
+from datasets import set_caching_enabled, ClassLabel, concatenate_datasets
 
 from environment import FewShotHandler, load_from_memory, set_generator, load_unseen, load_split_dataset
 from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_roberta, setup_entailment_roberta, \
@@ -16,7 +16,7 @@ from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_rober
                               setup_pretraining_similarity_gpt2, setup_separate_gpt2
 from utils import set_random_seed, get_timestamp_str, append_prefix
 from sentence_transformers import SentenceTransformer
-from generation import gpt2_generate_fake_knowns
+from generation import gpt2_generate_fake_knowns, gpt2_generate_fake_similars
 
 
 set_caching_enabled(False)
@@ -432,4 +432,20 @@ def synthesize_fake_knowns(fshandler, params):
     fake_dataset = gpt2_generate_fake_knowns(fshandler.state["gpt2_model"], fshandler.state["gpt2_tokenizer"],
                                              fshandler.unknown.unique("intent"), intent_size)
     fshandler.state["fake_known"] = fake_dataset
+    return {}
+
+
+def synthesize_fake_similar(fshandler, params):
+    example_size = 1
+    if "example_size" in params:
+        example_size = params["example_size"]
+    fake_positives = gpt2_generate_fake_similars(fshandler.state["positive_gpt2_model"], 
+                                                 fshandler.state["positive_gpt2_tokenizer"],
+                                                 fshandler.known["text"], fshandler.known["intent"],
+                                                 example_size, 1)
+    fake_negatives = gpt2_generate_fake_similars(fshandler.state["negative_gpt2_model"], 
+                                                 fshandler.state["negative_gpt2_tokenizer"],
+                                                 fshandler.known["text"], fshandler.known["intent"],
+                                                 example_size, 0)
+    fshandler.state["fake_similar"] = concatenate_datasets([fake_positives, fake_negatives])
     return {}

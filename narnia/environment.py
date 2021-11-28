@@ -80,7 +80,7 @@ def set_generator(dataset, support_size=10, shuffle=True, extra_size=0, val_size
                 test_ids = list(set(val_test_ids) - set(val_ids))
 
                 val.append(dataset.select(val_ids))
-                test.append(dataset.selec(test_ids))
+                test.append(dataset.select(test_ids))
             else:
                 test_ids = list(set(intent_idxs[intent]) - set(train_ids))
                 test.append(dataset.select(test_ids))
