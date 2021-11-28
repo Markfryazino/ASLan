@@ -439,13 +439,18 @@ def synthesize_fake_similar(fshandler, params):
     example_size = 1
     if "example_size" in params:
         example_size = params["example_size"]
+
+    settings = None
+    if "generation" in params:
+        settings = params["generation"]
+
     fake_positives = gpt2_generate_fake_similars(fshandler.state["positive_gpt2_model"], 
                                                  fshandler.state["positive_gpt2_tokenizer"],
                                                  fshandler.known["text"], fshandler.known["intent"],
-                                                 example_size, 1)
+                                                 example_size, 1, settings)
     fake_negatives = gpt2_generate_fake_similars(fshandler.state["negative_gpt2_model"], 
                                                  fshandler.state["negative_gpt2_tokenizer"],
                                                  fshandler.known["text"], fshandler.known["intent"],
-                                                 example_size, 0)
+                                                 example_size, 0, settings)
     fshandler.state["fake_similar"] = concatenate_datasets([fake_positives, fake_negatives])
     return {}

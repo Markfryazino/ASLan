@@ -146,7 +146,17 @@ class GenerationTypedDataset(torch.utils.data.Dataset):
         }
 
 
-def generate_response_from_sep(model, tokenizer, source):
+def generate_response_from_sep(model, tokenizer, source, params=None):
+    if params is None:
+        params = {}
+
+    settings = {
+        "max_length": 50,
+        "do_sample": True,
+        "temperature": 0.4
+    }
+    settings.update(params)
+
     prompt = "<start>" + source + "<sep>"
     input_ids = tokenizer.encode(prompt, return_tensors="pt").to('cuda')
 
@@ -154,9 +164,7 @@ def generate_response_from_sep(model, tokenizer, source):
         input_ids,
         pad_token_id=tokenizer.pad_token_id,
         eos_token_id=tokenizer.eos_token_id,
-        max_length=50,
-        do_sample=True,
-        temperature=.4
+        **settings
     )
 
     result = tokenizer.decode(generated[0], skip_special_tokens=False)
@@ -177,17 +185,17 @@ def gpt2_generate_fake_knowns(model, tokenizer, intents, intent_size):
     }).shuffle(load_from_cache_file=False)
 
 
-def gpt2_generate_fake_similars(model, tokenizer, texts, intents, example_size, label):
-    text_unknown, text_known, label, intent_unknown, intent_known = [], [], [], [], []
+def gpt2_generate_fake_similars(model, tokenizer, texts, intents, example_size, label, params=None):
+    text_unknown, text_known, label_h, intent_unknown, intent_known = [], [], [], [], []
     with tqdm(total=len(texts) * example_size) as pbar:
         for text, intent in zip(texts, intents):
             for i in range(example_size):
-                cur_gen = generate_response_from_sep(model, tokenizer, text)
+                cur_gen = generate_response_from_sep(model, tokenizer, text, params)
                 cur_intent = "generated" if label == 0 else intent
 
                 text_unknown.append(text)
-                text.known(cur_gen)
-                label.append(label)
+                text_known.append(cur_gen)
+                label_h.append(label)
                 intent_unknown.append(intent)
                 intent_known.append(cur_intent)
 
@@ -196,7 +204,7 @@ def gpt2_generate_fake_similars(model, tokenizer, texts, intents, example_size, 
     return Dataset.from_dict({
         "text_unknown": text_unknown,
         "text_known": text_known,
-        "label": label,
+        "label": label_h,
         "intent_unknown": intent_unknown,
         "intent_known": intent_known
     }).shuffle(load_from_cache_file=False)
