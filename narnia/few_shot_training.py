@@ -271,19 +271,22 @@ def setup_separate_gpt2(gpt2, tokenizer, fshandler, params):
     def template(source, other):
         return f"<start>{source}<sep>{other}<end>"
 
+    if "test_size" not in params:
+        params["test_size"] = None
+
     raw_train = SBERTDataset(fshandler.known, **params["dataset"])
-    raw_test = SBERTDataset(fshandler.unknown, **params["dataset"])
+    raw_test = SBERTDataset(fshandler.val_known, **params["dataset"])
 
     train = TokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
                              no_label=True)
     test = TokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
-                             no_label=True)
+                             no_label=True, sample_size=params["test_size"])
     return gpt2, train, test
 
 
 def setup_entailment_roberta(roberta, tokenizer, fshandler, params):
     support_ui = UIDataset(fshandler.known, fshandler.intents)
-    test_ui = UIDataset(fshandler.unknown, fshandler.intents)
+    test_ui = UIDataset(fshandler.val_known, fshandler.intents)
 
     if "separator" not in params:
         params["separator"] = "<sep>"
@@ -309,11 +312,11 @@ def setup_knn_roberta(roberta, tokenizer, fshandler, params):
     support_uu, test_uu = None, None
     if "top_k" not in params:
         support_uu = UUDataset(fshandler.known, fshandler.known)
-        test_uu = UUDataset(fshandler.known, fshandler.unknown)
+        test_uu = UUDataset(fshandler.known, fshandler.val_known)
     else:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         support_uu = STUUDataset(fshandler.known, fshandler.known, top_k=params["top_k"], device=device)
-        test_uu = STUUDataset(fshandler.known, fshandler.unknown, top_k=params["top_k"], device=device)
+        test_uu = STUUDataset(fshandler.known, fshandler.val_known, top_k=params["top_k"], device=device)
 
     if "separator" not in params:
         params["separator"] = "<sep>"

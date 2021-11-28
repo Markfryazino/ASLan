@@ -56,7 +56,7 @@ def load_unseen(root_path="artifacts/CLINC150:v5"):
     return raw["train"]
 
 
-def set_generator(dataset, support_size=10, shuffle=True, extra_size=0):
+def set_generator(dataset, support_size=10, shuffle=True, extra_size=0, val_size=0):
     unique_intents = dataset.unique("intent")
     full_intents = np.array(dataset["intent"])
     intent_idxs = {}
@@ -65,29 +65,53 @@ def set_generator(dataset, support_size=10, shuffle=True, extra_size=0):
         intent_idxs[intent] = np.where(full_intents == intent)[0]
 
     while True:
-        train, extra, test = [], [], []
+        train, extra, val, test = [], [], [], []
         for intent in unique_intents:
             train_ids = np.random.choice(intent_idxs[intent], support_size, replace=False)
-            test_ids = list(set(intent_idxs[intent]) - set(train_ids))
             train.append(dataset.select(train_ids))
-            test.append(dataset.select(test_ids))
 
             if extra_size > 0:
                 extra_ids = np.random.choice(train_ids, extra_size, replace=False)
                 extra.append(dataset.select(extra_ids))
 
-        if (extra_size == 0) and shuffle:
-            yield concatenate_datasets(train).shuffle(load_from_cache_file=False).flatten_indices(), \
-                  concatenate_datasets(test).shuffle(load_from_cache_file=False).flatten_indices()
-        elif extra_size == 0:
-            yield concatenate_datasets(train).flatten_indices(), concatenate_datasets(test).flatten_indices()
-        elif (extra_size > 0) and shuffle:
-            yield concatenate_datasets(train).shuffle(load_from_cache_file=False).flatten_indices(), \
-                  concatenate_datasets(extra).shuffle(load_from_cache_file=False).flatten_indices(), \
-                  concatenate_datasets(test).shuffle(load_from_cache_file=False).flatten_indices()
+            if val_size > 0:
+                val_test_ids = list(set(intent_idxs[intent]) - set(train_ids))
+                val_ids = np.random.choice(val_test_ids, val_size, replace=False)
+                test_ids = list(set(val_test_ids) - set(val_ids))
+
+                val.append(dataset.select(val_ids))
+                test.append(dataset.selec(test_ids))
+            else:
+                test_ids = list(set(intent_idxs[intent]) - set(train_ids))
+                test.append(dataset.select(test_ids))
+
+        train_final, test_final = None, None
+        extra_final, val_final = None, None
+        if shuffle:
+            train_final = concatenate_datasets(train).shuffle(load_from_cache_file=False).flatten_indices()
+            test_final = concatenate_datasets(test).shuffle(load_from_cache_file=False).flatten_indices()
+
+            if extra_size > 0:
+                extra_final = concatenate_datasets(extra).shuffle(load_from_cache_file=False).flatten_indices()
+            
+            if val_size > 0:
+                val_final = concatenate_datasets(val).shuffle(load_from_cache_file=False).flatten_indices()
         else:
-            yield concatenate_datasets(train).flatten_indices(), concatenate_datasets(extra).flatten_indices(), \
-                  concatenate_datasets(test).flatten_indices()
+            train_final = concatenate_datasets(train).flatten_indices()
+            test_final = concatenate_datasets(test).flatten_indices()
+
+            if extra_size > 0:
+                extra_final = concatenate_datasets(extra).flatten_indices()
+            
+            if val_size > 0:
+                val_final = concatenate_datasets(val).flatten_indices()
+
+        yield {
+            "train": train_final,
+            "test": test_final,
+            "extra": extra_final,
+            "val": val_final
+        }
 
 
 def encode_example(example, mapping):
@@ -335,10 +359,11 @@ def analyze_log_dataset(data, top_k):
 
 
 class FewShotHandler():
-    def __init__(self, unknown, known=None, device="cuda", logger=print, extra_known=None):
+    def __init__(self, unknown, known=None, device="cuda", logger=print, extra_known=None, val_known=None):
         self.known = known
         self.unknown = unknown
         self.extra_known = extra_known
+        self.val_known = val_known
         
         self.intents = self.unknown.unique("intent")
         self.intent_num = len(self.intents)

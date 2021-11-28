@@ -41,6 +41,7 @@ class FewShotLaboratory:
         artifacts: Dict[str, str],
         support_size: int = 10,
         extra_size: int = 0,
+        val_size: int = 0,
         logger: Callable[[str], None] = print,
         wandb_args: Dict = {},
         params: Dict = {},
@@ -51,13 +52,15 @@ class FewShotLaboratory:
             "pretraining_modules": [name for name, func in pretraining_modules],
             "module_params": params,
             "support_size": support_size,
-            "extra_size": extra_size
+            "extra_size": extra_size,
+            "val_size": val_size
         }
         self.modules = modules
         self.pretraining_modules = pretraining_modules
         self.artifacts = artifacts
         self.support_size = support_size
         self.extra_size = extra_size
+        self.val_size = val_size
         self.logger = logger
         self.wandb_args = wandb_args
         self.params = params
@@ -79,7 +82,8 @@ class FewShotLaboratory:
         self.logger(f"Setting dataset {dataset}, split {split}")
         self.seen, self.unseen = load_split_dataset(self.root_path, dataset, split)
         self.state["seen_data"] = self.seen
-        self.generator = set_generator(self.unseen, support_size=self.support_size, extra_size=self.extra_size)
+        self.generator = set_generator(self.unseen, support_size=self.support_size, extra_size=self.extra_size,
+                                       val_size=self.val_size)
         self.config.update({"dataset": dataset, "split": split})
 
     def run_series(self, dataset, random_states, use_negative_split=False):
@@ -149,13 +153,10 @@ class FewShotLaboratory:
         self.logger(f"Starting run with random_state = {random_state}")
 
         set_random_seed(random_state)
-        if self.extra_size > 0:
-            known, extra, unknown = next(self.generator)
-            fshandler = FewShotHandler(unknown, known, device=self.device, logger=self.logger, extra_known=extra)
-        else:
-            known, unknown = next(self.generator)
-            fshandler = FewShotHandler(unknown, known, device=self.device, logger=self.logger)     
 
+        set_data = next(self.generator)
+        fshandler = FewShotHandler(set_data["test"], set_data["train"], device=self.device, logger=self.logger, 
+                                   extra_known=set_data["extra"], val_known=set_data["val"])  
         fshandler.state.update(self.state)
 
         run_metrics = {}
@@ -349,7 +350,7 @@ def finetune_sbert(fshandler, params):
 
     sbert = fshandler.state["sbert"].to(state["device"])
     sbert, metrics = sbert_training(sbert, fshandler.known, prefix=block_name, 
-                                    eval_data=fshandler.unknown, params=params)
+                                    eval_data=fshandler.val_known, params=params)
     state["sbert"] = sbert
     return metrics
 
@@ -381,12 +382,21 @@ def encode_labels(state, params):
 
 
 def encode_fshandler_labels(fshandler, params):
-    unique_intents = list(fshandler.known.unique("intent")["train"])
+    unique_intents = list(fshandler.known.unique("intent"))
     classlabel = ClassLabel(names=unique_intents)
     fshandler.known = fshandler.known.map(lambda x: {"label": classlabel.str2int(x["intent"]), **x},
                                           load_from_cache_file=False)
     fshandler.unknown = fshandler.unknown.map(lambda x: {"label": classlabel.str2int(x["intent"]), **x},
                                               load_from_cache_file=False)
+
+    if fshandler.extra_known is not None:
+        fshandler.extra_known = fshandler.extra_known.map(lambda x: {"label": classlabel.str2int(x["intent"]), **x},
+                                                        load_from_cache_file=False)
+
+    if fshandler.val_known is not None:
+        fshandler.val_known = fshandler.val_known.map(lambda x: {"label": classlabel.str2int(x["intent"]), **x},
+                                                      load_from_cache_file=False)
+
     fshandler.state["classlabel"] = classlabel
     return {}
 
