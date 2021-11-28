@@ -13,7 +13,7 @@ from environment import FewShotHandler, load_from_memory, set_generator, load_un
 from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_roberta, setup_entailment_roberta, \
                               laboratory_pretraining, setup_pretraining_bert, sbert_training, \
                               setup_pretraining_knn_roberta, setup_pretraining_naive_gpt2, \
-                              setup_pretraining_similarity_gpt2
+                              setup_pretraining_similarity_gpt2, setup_separate_gpt2
 from utils import set_random_seed, get_timestamp_str, append_prefix
 from sentence_transformers import SentenceTransformer
 from generation import gpt2_generate_fake_knowns
@@ -204,8 +204,15 @@ def load_knn_roberta(fshandler, params):
 
 
 def load_gpt2(fshandler, params):
-    tokenizer = GPT2TokenizerFast.from_pretrained(params["gpt2_path"])
-    model = GPT2LMHeadModel.from_pretrained(params["gpt2_path"]).to(fshandler.device)
+    if ("gpt2_path" not in params) or (params["gpt2_path"] is None):
+        fshandler.log("Loading gpt-2 from gpt2 base checkpoint")
+        tokenizer = GPT2TokenizerFast.from_pretrained('gpt2', truncation=True, padding=True)
+        tokenizer.add_special_tokens({"sep_token": "<sep>", "pad_token": "<pad>", "bos_token": "<start>",
+                                    "eos_token": "<end>", "unk_token": "<unk>"})
+        model = GPT2LMHeadModel.from_pretrained("gpt2")
+    else:
+        tokenizer = GPT2TokenizerFast.from_pretrained(params["gpt2_path"])
+        model = GPT2LMHeadModel.from_pretrained(params["gpt2_path"])
     model.resize_token_embeddings(len(tokenizer))
     fshandler.state["gpt2_model"] = model
     fshandler.state["gpt2_tokenizer"] = tokenizer
@@ -320,6 +327,22 @@ def pretrain_similarity_gpt2(state, params):
     return metrics
 
 
+def finetune_separate_gpt2(fshandler, params):
+    block_name = params["block_name"]
+    del params["block_name"]
+
+    model = fshandler.state["gpt2_model"]
+    tokenizer = fshandler.state["gpt2_tokenizer"]
+
+    model, metrics = laboratory_finetuning(model, tokenizer, fshandler, setup_separate_gpt2, 
+                                           prefix=block_name, params=params, mode="generation")
+
+    fshandler.state[params["prefix"] + "_gpt2_model"] = model
+    fshandler.state[params["prefix"] + "_gpt2_tokenizer"] = tokenizer
+
+    return metrics
+
+
 def finetune_sbert(fshandler, params):
     block_name = params["block_name"]
     del params["block_name"]
@@ -354,6 +377,17 @@ def encode_labels(state, params):
     state["seen_data"] = state["seen_data"].map(lambda x: {"label": classlabel.str2int(x["intent"]), **x},
                                                 load_from_cache_file=False)
     state["classlabel"] = classlabel
+    return {}
+
+
+def encode_fshandler_labels(fshandler, params):
+    unique_intents = list(fshandler.known.unique("intent")["train"])
+    classlabel = ClassLabel(names=unique_intents)
+    fshandler.known = fshandler.known.map(lambda x: {"label": classlabel.str2int(x["intent"]), **x},
+                                          load_from_cache_file=False)
+    fshandler.unknown = fshandler.unknown.map(lambda x: {"label": classlabel.str2int(x["intent"]), **x},
+                                              load_from_cache_file=False)
+    fshandler.state["classlabel"] = classlabel
     return {}
 
 

@@ -267,6 +267,20 @@ def setup_pretraining_similarity_gpt2(gpt2, tokenizer, seen_data, params=None):
     return gpt2, train, val, test
 
 
+def setup_separate_gpt2(gpt2, tokenizer, fshandler, params):
+    def template(source, other):
+        return f"<start>{source}<sep>{other}<end>"
+
+    raw_train = SBERTDataset(fshandler.known, **params["dataset"])
+    raw_test = SBERTDataset(fshandler.unknown, **params["dataset"])
+
+    train = TokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
+                             no_label=True)
+    test = TokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
+                             no_label=True)
+    return gpt2, train, test
+
+
 def setup_entailment_roberta(roberta, tokenizer, fshandler, params):
     support_ui = UIDataset(fshandler.known, fshandler.intents)
     test_ui = UIDataset(fshandler.unknown, fshandler.intents)
