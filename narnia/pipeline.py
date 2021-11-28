@@ -188,8 +188,15 @@ def replace_knowns(fshandler, params):
 
 
 def load_knn_roberta(fshandler, params):
-    tokenizer = RobertaTokenizerFast.from_pretrained(params["roberta_path"])
-    model = RobertaForSequenceClassification.from_pretrained(params["roberta_path"]).to(fshandler.device)
+    if ("roberta_path" not in params) or (params["roberta_path"] is None):
+        fshandler.log("Loading roberta from roberta-base checkpoint")
+        tokenizer = RobertaTokenizerFast.from_pretrained('roberta-base')
+        tokenizer.add_special_tokens({"sep_token": "<sep>", "pad_token": "<pad>"}) 
+        model = RobertaForSequenceClassification.from_pretrained('roberta-base', num_labels=2).to(fshandler.device)
+    else:
+        tokenizer = RobertaTokenizerFast.from_pretrained(params["roberta_path"])
+        model = RobertaForSequenceClassification.from_pretrained(params["roberta_path"]).to(fshandler.device)
+
     model.resize_token_embeddings(len(tokenizer))
     fshandler.state["knn_roberta_model"] = model
     fshandler.state["knn_roberta_tokenizer"] = tokenizer
