@@ -198,6 +198,82 @@ class STUUDataset(torch.utils.data.Dataset):
         }
 
 
+class SortingDataset(torch.utils.data.Dataset):
+    def __init__(self, source_data, label, sbert=None, logger=print, device="cuda"):
+        self.source = source_data
+        self.n = len(self.source)
+        self.label = label
+
+        if sbert is None:
+            logger("Parameter sbert is None, initializing as 'all-mpnet-base-v2'")
+            sbert = SentenceTransformer('all-mpnet-base-v2').to(device)
+        elif type(sbert) is str:
+            sbert = SentenceTransformer(sbert).to(device)
+
+        logger("Encoding dataset using SBERT...")
+        embeddings = sbert.encode(self.source["text"])
+        distances = scipy.spatial.distance.pdist(embeddings, metric="cosine")
+        logger("Dataset was encoded")  
+
+        mask = scipy.spatial.distance.pdist(np.array(self.source["label"]).reshape((-1, 1)))
+        negative_mask = (mask > 0).astype(int)
+        positive_mask = (mask == 0).astype(int)
+
+        if self.label == 0:
+            negative_sform = scipy.spatial.distance.squareform(distances * negative_mask)
+            negative_sform[np.where(negative_sform == 0.)] = 42
+
+            self.sform = negative_sform
+            self.idxs = negative_sform.reshape(-1).argsort() \
+                [:np.where(np.sort(negative_sform.reshape(-1)) == 42)[0].min()][::-1]
+
+        elif self.label == 1:
+            positive_sform = scipy.spatial.distance.squareform(distances * positive_mask)
+            positive_sform[np.where(positive_sform == 0.)] = -42
+
+            self.sform = positive_sform
+            self.idxs = positive_sform.reshape(-1).argsort() \
+                [np.where(np.sort(positive_sform.reshape(-1)) == -42)[0].max() + 1:]
+        
+        else:
+            raise ValueError(f"Incorrect label {label}")
+
+    def __len__(self):
+        return len(self.idxs)
+
+    def __getitem__(self, idx):
+        id1 = self.idxs[idx] // len(self.source)
+        id2 = self.idxs[idx] % len(self.source)
+
+        return {
+            "source_text": self.source[id1]["text"],
+            "source_intent": self.source[id1]["intent"],
+            "other_text": self.source[id2]["text"],
+            "other_intent": self.source[id2]["intent"],
+            "label": label,
+            "distance": self.sform[id1][id2]
+        }
+
+
+class CurriculumIterableDataset(torch.utils.data.IterableDataset):
+    def __init__(self, source, warmup_steps=100, final_steps=100):
+        super(TokenizedCurriculumDataset, self).__init__()
+        self.source = source
+        self.warmup_steps = warmup_steps
+        self.final_steps = final_steps
+    
+    def __iter__(self):
+        for self.step in range(self.warmup_steps + self.final_steps):
+            if self.warmup_steps == 0:
+                self.boundary = len(self.source)
+            else:
+                self.boundary = int(self.step / self.warmup_steps * len(self.source))
+                self.boundary = min(self.boundary, len(self.source))
+
+            idx = np.random.randint(0, self.boundary)
+            yield self.source[idx]
+
+
 class SBERTDataset(torch.utils.data.Dataset):
     def __init__(self, source_data, sbert=None, logger=print, pair_numbers=None, device="cuda"):
         self.pair_numbers = pair_numbers or {
@@ -322,7 +398,22 @@ class TokenizedDataset(torch.utils.data.Dataset):
         if ("label" in source_example) and not self.no_label:
             tokenized.update({"label": source_example["label"]})
         return tokenized
-    
+
+
+class IterableTokenizedDataset(torch.utils.data.Dataset):
+    def __init__(self, source_dataset, builder, tokenizer, no_label=False):
+        self.source = source_dataset
+        self.builder = builder
+        self.tokenizer = tokenizer
+        self.no_label = no_label
+
+    def __iter__(self):
+        for source_example in iter(self.source):
+            tokenized = self.tokenizer(self.builder(source_example))
+            if ("label" in source_example) and not self.no_label:
+                tokenized.update({"label": source_example["label"]})
+            yield tokenized
+
 
 def analyze_log_dataset(data, top_k):
     results = []

@@ -10,7 +10,8 @@ import os
 import pandas as pd
 
 from environment import FewShotHandler, TokenizedDataset, UIDataset, UUDataset, STUUDataset, \
-                        SBERTDataset, IEFormatDataset
+                        SBERTDataset, IEFormatDataset, SortingDataset, CurriculumIterableDataset, \
+                        IterableTokenizedDataset
 from wandb_callback import WandbPrefixCallback, SBERTWandbCallback
 
 from sentence_transformers import SentenceTransformer, LoggingHandler, losses, InputExample
@@ -271,16 +272,33 @@ def setup_separate_gpt2(gpt2, tokenizer, fshandler, params):
     def template(source, other):
         return f"<start>{source}<sep>{other}<end>"
 
-    if "test_size" not in params:
-        params["test_size"] = None
+    if "curriculum" not in params or not params["curriculum"]:
+        if "test_size" not in params:
+            params["test_size"] = None
 
-    raw_train = SBERTDataset(fshandler.known, **params["dataset"])
-    raw_test = SBERTDataset(fshandler.val_known, **params["dataset"])
+        raw_train = SBERTDataset(fshandler.known, **params["dataset"])
+        raw_test = SBERTDataset(fshandler.val_known, **params["dataset"])
 
-    train = TokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
-                             no_label=True)
-    test = TokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
-                             no_label=True, sample_size=params["test_size"])
+        train = TokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
+                                no_label=True)
+        test = TokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
+                                no_label=True, sample_size=params["test_size"])
+
+    else:
+        if "sorting_dataset" not in params:
+            params["sorting_dataset"] = {}
+
+        raw_train = CurriculumIterableDataset(
+            SortingDataset(fshandler.known, **params["train_dataset"]),
+            **params["sorting_dataset"]
+        )
+        raw_test = SBERTDataset(fshandler.val_known, **params["val_dataset"])
+
+        train = IterableTokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"]), 
+                                         tokenizer, no_label=True)
+        test = IterableTokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"]), 
+                                        tokenizer, no_label=True)
+        
     return gpt2, train, test
 
 
@@ -320,7 +338,7 @@ def setup_knn_roberta(roberta, tokenizer, fshandler, params):
 
     if ("use_fakes" in params) and params["use_fakes"] and ("fake_similar" in fshandler.state):
         fshandler.log(f"Using fake data for finetuning, concatenating {len(support_uu)}" + \
-                      f" + {len(fshandler.state["fake_similar"])} examples")
+                      f" + {len(fshandler.state['fake_similar'])} examples")
         support_uu = torch.utils.data.ConcatDataset([support_uu, fshandler.state["fake_similar"]])
 
     if "separator" not in params:
