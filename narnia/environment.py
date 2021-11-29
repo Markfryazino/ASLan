@@ -242,32 +242,35 @@ class SortingDataset(torch.utils.data.Dataset):
         return len(self.idxs)
 
     def __getitem__(self, idx):
-        id1 = self.idxs[idx] // len(self.source)
-        id2 = self.idxs[idx] % len(self.source)
+        id1 = int(self.idxs[idx] // len(self.source))
+        id2 = int(self.idxs[idx] % len(self.source))
 
         return {
             "source_text": self.source[id1]["text"],
             "source_intent": self.source[id1]["intent"],
             "other_text": self.source[id2]["text"],
             "other_intent": self.source[id2]["intent"],
-            "label": label,
+            "label": self.label,
             "distance": self.sform[id1][id2]
         }
 
 
 class CurriculumIterableDataset(torch.utils.data.IterableDataset):
-    def __init__(self, source, warmup_steps=100, final_steps=100):
-        super(TokenizedCurriculumDataset, self).__init__()
+    def __init__(self, source, warmup_samples=100, final_samples=100):
+        super().__init__()
         self.source = source
-        self.warmup_steps = warmup_steps
-        self.final_steps = final_steps
+        self.warmup_samples = warmup_samples
+        self.final_samples = final_samples
     
+    def __len__(self):
+        return (self.warmup_samples + self.final_samples)
+
     def __iter__(self):
-        for self.step in range(self.warmup_steps + self.final_steps):
-            if self.warmup_steps == 0:
+        for self.step in range(1, self.warmup_samples + self.final_samples + 1):
+            if self.warmup_samples == 0:
                 self.boundary = len(self.source)
             else:
-                self.boundary = int(self.step / self.warmup_steps * len(self.source))
+                self.boundary = int(self.step / self.warmup_samples * len(self.source))
                 self.boundary = min(self.boundary, len(self.source))
 
             idx = np.random.randint(0, self.boundary)
@@ -400,12 +403,15 @@ class TokenizedDataset(torch.utils.data.Dataset):
         return tokenized
 
 
-class IterableTokenizedDataset(torch.utils.data.Dataset):
+class IterableTokenizedDataset(torch.utils.data.IterableDataset):
     def __init__(self, source_dataset, builder, tokenizer, no_label=False):
         self.source = source_dataset
         self.builder = builder
         self.tokenizer = tokenizer
         self.no_label = no_label
+
+    def __len__(self):
+        return len(self.source)
 
     def __iter__(self):
         for source_example in iter(self.source):

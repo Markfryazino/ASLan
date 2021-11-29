@@ -285,12 +285,12 @@ def setup_separate_gpt2(gpt2, tokenizer, fshandler, params):
                                 no_label=True, sample_size=params["test_size"])
 
     else:
-        if "sorting_dataset" not in params:
-            params["sorting_dataset"] = {}
+        if "curriculum_dataset" not in params:
+            params["curriculum_dataset"] = {}
 
         raw_train = CurriculumIterableDataset(
             SortingDataset(fshandler.known, **params["train_dataset"]),
-            **params["sorting_dataset"]
+            **params["curriculum_dataset"]
         )
         raw_test = SBERTDataset(fshandler.val_known, **params["val_dataset"])
 
