@@ -354,10 +354,10 @@ def finetune_sbert(fshandler, params):
     block_name = params["block_name"]
     del params["block_name"]
 
-    sbert = fshandler.state["sbert"].to(state["device"])
+    sbert = fshandler.state["sbert"].to(fshandler.state["device"])
     sbert, metrics = sbert_training(sbert, fshandler.known, prefix=block_name, 
                                     eval_data=fshandler.val_known, params=params)
-    state["sbert"] = sbert
+    fshandler.state["sbert"] = sbert
     return metrics
 
 
