@@ -1,15 +1,17 @@
 import wandb
 from typing import Dict, Callable, List, Tuple
+from tqdm.auto import tqdm, trange
 import os
 import logging
 from pathlib import Path
 
 import torch
 from transformers import RobertaTokenizerFast, RobertaForSequenceClassification, \
-                         GPT2TokenizerFast, GPT2LMHeadModel
+                         GPT2TokenizerFast, GPT2LMHeadModel, DataCollatorForLanguageModeling
 from datasets import set_caching_enabled, ClassLabel, concatenate_datasets
 
-from environment import FewShotHandler, load_from_memory, set_generator, load_unseen, load_split_dataset
+from environment import FewShotHandler, load_from_memory, set_generator, load_unseen, load_split_dataset, \
+                        STUUDataset, TokenizedDataset
 from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_roberta, setup_entailment_roberta, \
                               laboratory_pretraining, setup_pretraining_bert, sbert_training, \
                               setup_pretraining_knn_roberta, setup_pretraining_naive_gpt2, \
@@ -17,6 +19,10 @@ from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_rober
 from utils import set_random_seed, get_timestamp_str, append_prefix
 from sentence_transformers import SentenceTransformer
 from generation import gpt2_generate_fake_knowns, gpt2_generate_fake_similars
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_style("darkgrid")
 
 
 set_caching_enabled(False)
@@ -155,8 +161,8 @@ class FewShotLaboratory:
         set_random_seed(random_state)
 
         set_data = next(self.generator)
-        fshandler = FewShotHandler(set_data["test"], set_data["train"], device=self.device, logger=self.logger, 
-                                   extra_known=set_data["extra"], val_known=set_data["val"])  
+        fshandler = FewShotHandler(self.support_size, set_data["test"], set_data["train"], device=self.device, 
+                                   logger=self.logger, extra_known=set_data["extra"], val_known=set_data["val"])  
         fshandler.state.update(self.state)
 
         run_metrics = {}
@@ -454,3 +460,57 @@ def synthesize_fake_similar(fshandler, params):
                                                  example_size, 0, settings)
     fshandler.state["fake_similar"] = concatenate_datasets([fake_positives, fake_negatives])
     return {}
+
+
+def eval_gpt2(fshandler, params):
+    def template(source, other):
+        return f"<start>{source}<sep>{other}<end>"
+
+    prefix = params["prefix"]
+    model = fshandler.state[prefix + "_gpt2_model"]
+    tokenizer = fshandler.state[prefix + "_gpt2_tokenizer"]
+
+    fshandler.log("Building STUU dataset for evaluating GPT-2")
+
+    stuu = STUUDataset(fshandler.known, fshandler.val_known, top_k=params["top_k"])
+    positive = [el for el in stuu if el["label"] == 1]
+    negative = [el for el in stuu if el["label"] == 0]
+
+    tok_positive = TokenizedDataset(positive, lambda x: template(x["text_known"], x["text_unknown"]), tokenizer, no_label=True)
+    tok_negative = TokenizedDataset(negative, lambda x: template(x["text_known"], x["text_unknown"]), tokenizer, no_label=True)
+
+    collator = DataCollatorForLanguageModeling(mlm=False, tokenizer=tokenizer)
+    positive_loader = torch.utils.data.DataLoader(tok_positive, batch_size=1, collate_fn=collator)
+    negative_loader = torch.utils.data.DataLoader(tok_negative, batch_size=1, collate_fn=collator)
+
+    positive_losses = []
+    negative_losses = []
+
+    fshandler.log("Predicting perplexities")
+
+    with torch.inference_mode():
+        for batch in tqdm(positive_loader):
+            positive_losses.append(model(**batch.to("cuda")).loss.item())
+
+        for batch in tqdm(negative_loader):
+            negative_losses.append(model(**batch.to("cuda")).loss.item())
+
+    positive_losses = np.array(positive_losses)
+    negative_losses = np.array(negative_losses)
+
+    ax = sns.violinplot(data=[positive_losses, negative_losses])
+    ax.set_ylim(0, 7)
+    ax.set_xticklabels(["positive", "negative"])
+    ax.set_ylabel("loss")
+
+    metrics = {
+        "mean_positive_loss": positive_losses.mean(),
+        "mean_negative_loss": negative_losses.mean(),
+        "mean_losses_difference": positive_losses.mean() - negative_losses.mean(),
+        "median_positive_loss": np.median(positive_losses),
+        "median_negative_loss": np.median(negative_losses),
+        "median_losses_difference": np.median(positive_losses) - np.median(negative_losses),
+        "plot": ax      
+    }
+
+    return metrics

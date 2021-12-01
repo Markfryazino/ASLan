@@ -328,13 +328,28 @@ def setup_entailment_roberta(roberta, tokenizer, fshandler, params):
 
 def setup_knn_roberta(roberta, tokenizer, fshandler, params):
     support_uu, test_uu = None, None
+
+    sbert = None
+    if "sbert" in fshandler.state:
+        sbert = fshandler.state["sbert"]
+
     if "top_k" not in params:
         support_uu = UUDataset(fshandler.known, fshandler.known)
         test_uu = UUDataset(fshandler.known, fshandler.val_known)
     else:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         support_uu = STUUDataset(fshandler.known, fshandler.known, top_k=params["top_k"], device=device)
-        test_uu = STUUDataset(fshandler.known, fshandler.val_known, top_k=params["top_k"], device=device)
+
+        pair_numbers = {
+            "hard_positive": fshandler.support_size,
+            "hard_negative": fshandler.support_size,
+            "easy_positive": 0,
+            "easy_negative": 0
+        }
+        support_uu = SBERTDataset(fshandler.known, sbert=sbert, logger=fshandler.log, pair_numbers=pair_numbers,
+                                  device=device)
+        test_uu = STUUDataset(fshandler.known, fshandler.val_known, sbert=sbert, 
+                              top_k=params["top_k"], device=device)
 
     if ("use_fakes" in params) and params["use_fakes"] and ("fake_similar" in fshandler.state):
         fshandler.log(f"Using fake data for finetuning, concatenating {len(support_uu)}" + \

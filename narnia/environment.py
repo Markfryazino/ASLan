@@ -456,7 +456,8 @@ def analyze_log_dataset(data, top_k):
 
 
 class FewShotHandler():
-    def __init__(self, unknown, known=None, device="cuda", logger=print, extra_known=None, val_known=None):
+    def __init__(self, support_size, unknown, known=None, device="cuda", logger=print, extra_known=None, val_known=None):
+        self.support_size = support_size
         self.known = known
         self.unknown = unknown
         self.extra_known = extra_known
