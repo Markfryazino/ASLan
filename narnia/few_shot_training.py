@@ -331,6 +331,7 @@ def setup_knn_roberta(roberta, tokenizer, fshandler, params):
 
     sbert = None
     if "sbert" in fshandler.state:
+        fshandler.log("found sbert in state, using it")
         sbert = fshandler.state["sbert"]
 
     if "top_k" not in params:
@@ -361,8 +362,8 @@ def setup_knn_roberta(roberta, tokenizer, fshandler, params):
     if "test_size" not in params:
         params["test_size"] = None
 
-    support_set = TokenizedDataset(support_uu, lambda x: x["text_known"] + \
-                                   params["separator"] + x["text_unknown"], tokenizer)
+    support_set = TokenizedDataset(support_uu, lambda x: x["source_text"] + \
+                                   params["separator"] + x["other_text"], tokenizer)
     test_set = TokenizedDataset(test_uu, lambda x: x["text_known"] + \
                                 params["separator"] + x["text_unknown"], tokenizer, sample_size=params["test_size"])
 
