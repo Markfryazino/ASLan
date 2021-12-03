@@ -584,7 +584,10 @@ class FewShotHandler():
             json.dump(self.state["eval_dataset_analysis"], f)
         wandb.save("./results/eval_analysis.json")
 
-        return {"accuracy": correct / len(self.unknown), "details": details}
+        mean_filtered_corrects = np.mean([el["number_of_correct"] for el in self.state["eval_dataset_analysis"]])
+
+        return {"accuracy": correct / len(self.unknown), "details": details, 
+                "mean_filtered_corrects": mean_filtered_corrects}
 
     def eval_uu(self, model, tokenizer, batch_size=64, separator="<sep>"):
         return self.eval_as_1nn(model, tokenizer, self.uu_dataset, batch_size, separator)

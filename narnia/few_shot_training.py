@@ -20,10 +20,16 @@ from sentence_transformers.evaluation import EmbeddingSimilarityEvaluator
 from generation import GENERATION_ARGS
 
 
-ACCURACY = load_metric("accuracy")
-PRECISION = load_metric("precision")
-RECALL = load_metric("recall")
-F1 = load_metric("f1")
+if not offline():
+    ACCURACY = load_metric("accuracy")
+    PRECISION = load_metric("precision")
+    RECALL = load_metric("recall")
+    F1 = load_metric("f1")
+else:
+    ACCURACY = load_metric("./portal/metrics/accuracy")
+    PRECISION = load_metric("./portal/metrics/precision")
+    RECALL = load_metric("./portal/metrics/recall")
+    F1 = load_metric("./portal/metrics/f1") 
 
 COMMON_ARGS = {
     "per_device_train_batch_size": 32,

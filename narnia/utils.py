@@ -5,6 +5,10 @@ import os
 import datetime
 
 
+def offline():
+    return os.getenv("OFFLINE", default=False)
+
+
 def set_random_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.manual_seed(seed)

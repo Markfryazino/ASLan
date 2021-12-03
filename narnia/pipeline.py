@@ -16,7 +16,7 @@ from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_rober
                               laboratory_pretraining, setup_pretraining_bert, sbert_training, \
                               setup_pretraining_knn_roberta, setup_pretraining_naive_gpt2, \
                               setup_pretraining_similarity_gpt2, setup_separate_gpt2
-from utils import set_random_seed, get_timestamp_str, append_prefix
+from utils import set_random_seed, get_timestamp_str, append_prefix, offline
 from sentence_transformers import SentenceTransformer
 from generation import gpt2_generate_fake_knowns, gpt2_generate_fake_similars
 
@@ -76,7 +76,11 @@ class FewShotLaboratory:
         Path("./results").mkdir(parents=True, exist_ok=True)
         self.logger(f"Initializing laboratory\nUsing device {self.device}")
 
-        load_artifacts(artifacts, self.logger)
+        if not offline():
+            load_artifacts(artifacts, self.logger)
+        else:
+            os.environ["WANDB_MODE"] = "offline"
+
         self.seen, self.unseen, self.generator = None, None, None
         self.state = {
             "seen_data": self.seen,
