@@ -6,7 +6,7 @@ import datetime
 
 
 def offline():
-    return os.getenv("OFFLINE", default=False)
+    return os.getenv("OFFLINE", default="False") == "True"
 
 
 def set_random_seed(seed):

@@ -18,7 +18,7 @@ from sentence_transformers import SentenceTransformer, LoggingHandler, losses, I
 from sentence_transformers.evaluation import EmbeddingSimilarityEvaluator
 
 from generation import GENERATION_ARGS
-
+from utils import offline
 
 if not offline():
     ACCURACY = load_metric("accuracy")
@@ -26,10 +26,10 @@ if not offline():
     RECALL = load_metric("recall")
     F1 = load_metric("f1")
 else:
-    ACCURACY = load_metric("./portal/metrics/accuracy")
-    PRECISION = load_metric("./portal/metrics/precision")
-    RECALL = load_metric("./portal/metrics/recall")
-    F1 = load_metric("./portal/metrics/f1") 
+    ACCURACY = load_metric("../portal/metrics/accuracy.py")
+    PRECISION = load_metric("../portal/metrics/precision.py")
+    RECALL = load_metric("../portal/metrics/recall.py")
+    F1 = load_metric("../portal/metrics/f1.py") 
 
 COMMON_ARGS = {
     "per_device_train_batch_size": 32,
@@ -345,7 +345,8 @@ def setup_knn_roberta(roberta, tokenizer, fshandler, params):
         test_uu = UUDataset(fshandler.known, fshandler.val_known)
     else:
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        support_uu = STUUDataset(fshandler.known, fshandler.known, top_k=params["top_k"], device=device)
+        support_uu = STUUDataset(fshandler.known, fshandler.known, top_k=params["top_k"], device=device, 
+                                 sbert=sbert)
 
         pair_numbers = {
             "hard_positive": fshandler.support_size,

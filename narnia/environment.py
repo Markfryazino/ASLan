@@ -403,6 +403,31 @@ class TokenizedDataset(torch.utils.data.Dataset):
         return tokenized
 
 
+class T5TokenizedDataset(torch.utils.data.Dataset):
+    def __init__(self, source_dataset, builder_input, builder_labels, tokenizer, sample_size=None):
+        self.source = source_dataset
+        self.builder_input = builder_input
+        self.builder_labels = builder_labels
+        self.tokenizer = tokenizer
+
+        if type(sample_size) == float:
+            sample_size = int(sample_size * len(self.source))
+        self.sample_size = sample_size if sample_size is not None else len(self.source)
+        self.use_idxs = np.arange(len(self.source))
+        if self.sample_size < len(self.source):
+            self.use_idxs = np.random.choice(len(self.source), self.sample_size, replace=False)
+    
+    def __len__(self):
+        return self.sample_size
+    
+    def __getitem__(self, idx):
+        source_example = self.source[int(self.use_idxs[idx])]
+        inputs = self.tokenizer(self.builder_input(source_example), return_tensors="pt").input_ids.squeeze()
+        labels = self.tokenizer(self.builder_labels(source_example), return_tensors="pt").input_ids.squeeze()
+
+        return {"input_ids": inputs, "labels": labels}
+
+
 class IterableTokenizedDataset(torch.utils.data.IterableDataset):
     def __init__(self, source_dataset, builder, tokenizer, no_label=False):
         self.source = source_dataset

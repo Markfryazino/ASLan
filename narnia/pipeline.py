@@ -78,8 +78,8 @@ class FewShotLaboratory:
 
         if not offline():
             load_artifacts(artifacts, self.logger)
-        else:
-            os.environ["WANDB_MODE"] = "offline"
+        # else:
+        #     os.environ["WANDB_MODE"] = "offline"
 
         self.seen, self.unseen, self.generator = None, None, None
         self.state = {
@@ -470,13 +470,18 @@ def eval_gpt2(fshandler, params):
     def template(source, other):
         return f"<start>{source}<sep>{other}<end>"
 
+    sbert = None
+    if "sbert" in fshandler.state:
+        fshandler.log("found sbert in state, using it")
+        sbert = fshandler.state["sbert"]
+
     prefix = params["prefix"]
     model = fshandler.state[prefix + "_gpt2_model"]
     tokenizer = fshandler.state[prefix + "_gpt2_tokenizer"]
 
     fshandler.log("Building STUU dataset for evaluating GPT-2")
 
-    stuu = STUUDataset(fshandler.known, fshandler.val_known, top_k=params["top_k"])
+    stuu = STUUDataset(fshandler.known, fshandler.val_known, top_k=params["top_k"], sbert=sbert)
     positive = [el for el in stuu if el["label"] == 1]
     negative = [el for el in stuu if el["label"] == 0]
 
