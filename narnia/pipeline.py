@@ -7,7 +7,8 @@ from pathlib import Path
 
 import torch
 from transformers import RobertaTokenizerFast, RobertaForSequenceClassification, \
-                         GPT2TokenizerFast, GPT2LMHeadModel, DataCollatorForLanguageModeling
+                         GPT2TokenizerFast, GPT2LMHeadModel, DataCollatorForLanguageModeling, \
+                         T5ForConditionalGeneration, T5TokenizerFast, DataCollatorForSeq2Seq
 from datasets import set_caching_enabled, ClassLabel, concatenate_datasets
 
 from environment import FewShotHandler, load_from_memory, set_generator, load_unseen, load_split_dataset, \
@@ -15,7 +16,7 @@ from environment import FewShotHandler, load_from_memory, set_generator, load_un
 from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_roberta, setup_entailment_roberta, \
                               laboratory_pretraining, setup_pretraining_bert, sbert_training, \
                               setup_pretraining_knn_roberta, setup_pretraining_naive_gpt2, \
-                              setup_pretraining_similarity_gpt2, setup_separate_gpt2
+                              setup_pretraining_similarity_gpt2, setup_separate_gpt2, setup_separate_t5
 from utils import set_random_seed, get_timestamp_str, append_prefix, offline
 from sentence_transformers import SentenceTransformer
 from generation import gpt2_generate_fake_knowns, gpt2_generate_fake_similars
@@ -230,6 +231,22 @@ def load_gpt2(fshandler, params):
     return {}
 
 
+def load_t5(fshandler, params):
+    if ("t5_path" not in params) or (params["t5_path"] is None):
+        fshandler.log("Loading T5 from t5-base checkpoint")
+        tokenizer = T5TokenizerFast.from_pretrained('t5-base', truncation=True, padding=True)
+        tokenizer.add_special_tokens({"sep_token": "<sep>", "pad_token": "<pad>", "bos_token": "<start>",
+                                    "eos_token": "<end>", "unk_token": "<unk>"})
+        model = T5ForConditionalGeneration.from_pretrained("t5-base")
+    else:
+        tokenizer = T5TokenizerFast.from_pretrained(params["t5_path"])
+        model = T5ForConditionalGeneration.from_pretrained(params["t5_path"])
+    model.resize_token_embeddings(len(tokenizer))
+    fshandler.state["t5_model"] = model
+    fshandler.state["t5_tokenizer"] = tokenizer
+    return {}
+
+
 def load_sbert(fshandler, params):
     model = SentenceTransformer(params["sbert_path"]).to(fshandler.device)
     fshandler.state["sbert"] = model
@@ -350,6 +367,22 @@ def finetune_separate_gpt2(fshandler, params):
 
     fshandler.state[params["prefix"] + "_gpt2_model"] = model
     fshandler.state[params["prefix"] + "_gpt2_tokenizer"] = tokenizer
+
+    return metrics
+
+
+def finetune_separate_t5(fshandler, params):
+    block_name = params["block_name"]
+    del params["block_name"]
+
+    model = fshandler.state["t5_model"]
+    tokenizer = fshandler.state["t5_tokenizer"]
+
+    model, metrics = laboratory_finetuning(model, tokenizer, fshandler, setup_separate_t5, 
+                                           prefix=block_name, params=params, mode="seq2seq")
+
+    fshandler.state[params["prefix"] + "_t5_model"] = model
+    fshandler.state[params["prefix"] + "_t5_tokenizer"] = tokenizer
 
     return metrics
 

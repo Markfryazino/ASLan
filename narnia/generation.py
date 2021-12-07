@@ -146,7 +146,7 @@ class GenerationTypedDataset(torch.utils.data.Dataset):
         }
 
 
-def generate_response_from_sep(model, tokenizer, source, params=None):
+def generate_response(model, tokenizer, source, builder, params=None):
     if params is None:
         params = {}
 
@@ -157,7 +157,7 @@ def generate_response_from_sep(model, tokenizer, source, params=None):
     }
     settings.update(params)
 
-    prompt = "<start>" + source + "<sep>"
+    prompt = builder(source)
     input_ids = tokenizer.encode(prompt, return_tensors="pt").to('cuda')
 
     generated = model.generate(
@@ -168,7 +168,7 @@ def generate_response_from_sep(model, tokenizer, source, params=None):
     )
 
     result = tokenizer.decode(generated[0], skip_special_tokens=False)
-    return result.split("<sep>")[-1].replace("<end>", "").strip()
+    return result[len(prompt):].replace("<end>", "").strip()
 
 
 def gpt2_generate_fake_knowns(model, tokenizer, intents, intent_size):

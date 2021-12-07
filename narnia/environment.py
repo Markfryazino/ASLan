@@ -428,22 +428,24 @@ class T5TokenizedDataset(torch.utils.data.Dataset):
         return {"input_ids": inputs, "labels": labels}
 
 
-class IterableTokenizedDataset(torch.utils.data.IterableDataset):
-    def __init__(self, source_dataset, builder, tokenizer, no_label=False):
-        self.source = source_dataset
-        self.builder = builder
-        self.tokenizer = tokenizer
-        self.no_label = no_label
-
+class IterableT5TokenizedDataset(torch.utils.data.IterableDataset):
+    def __init__(self, source_dataset, builder_input, builder_labels, tokenizer, sample_size=None):
+        self.source = T5TokenizedDataset(source_dataset, builder_input, builder_labels, tokenizer, sample_size)
     def __len__(self):
         return len(self.source)
-
     def __iter__(self):
-        for source_example in iter(self.source):
-            tokenized = self.tokenizer(self.builder(source_example))
-            if ("label" in source_example) and not self.no_label:
-                tokenized.update({"label": source_example["label"]})
-            yield tokenized
+        for i in range(len(self.source)):
+            yield self.source[i]
+
+
+class IterableTokenizedDataset(torch.utils.data.IterableDataset):
+    def __init__(self, source_dataset, builder, tokenizer, sample_size=None, no_label=False):
+        self.source = TokenizedDataset(source_dataset, builder, tokenizer, sample_size, no_label)
+    def __len__(self):
+        return len(self.source)
+    def __iter__(self):
+        for i in range(len(self.source)):
+            yield self.source[i]
 
 
 def analyze_log_dataset(data, top_k):

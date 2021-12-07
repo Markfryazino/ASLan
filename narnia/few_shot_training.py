@@ -4,7 +4,8 @@ import torch
 import json
 from transformers import Trainer, TrainingArguments, DataCollatorWithPadding, \
                          BertTokenizerFast, BertForSequenceClassification, \
-                         RobertaTokenizerFast, RobertaForSequenceClassification, DataCollatorForLanguageModeling
+                         RobertaTokenizerFast, RobertaForSequenceClassification, DataCollatorForLanguageModeling, \
+                         DataCollatorForSeq2Seq
 from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concatenate_datasets
 import os
 import pandas as pd
@@ -140,6 +141,7 @@ def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, l
         "binary": [COMMON_ARGS.copy(), compute_metrics, 
                    DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")],
         "generation": [GENERATION_ARGS.copy(), None, DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)],
+        "seq2seq": [GENERATION_ARGS.copy(), None, DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)],
     }
     settings, computer, collator = mode_args[mode]
     settings.update(params["training"])
@@ -275,8 +277,11 @@ def setup_pretraining_similarity_gpt2(gpt2, tokenizer, seen_data, params=None):
 
 
 def setup_separate_gpt2(gpt2, tokenizer, fshandler, params):
-    def template(source, other):
-        return f"<start>{source}<sep>{other}<end>"
+    def template(source, other, intent=None):
+        if intent is not None:
+            return f"<start>{intent}<sep>{source}<sep>{other}<end>"
+        else:
+            return f"<start>{source}<sep>{other}<end>"
 
     if "curriculum" not in params or not params["curriculum"]:
         if "test_size" not in params:
@@ -285,10 +290,16 @@ def setup_separate_gpt2(gpt2, tokenizer, fshandler, params):
         raw_train = SBERTDataset(fshandler.known, **params["dataset"])
         raw_test = SBERTDataset(fshandler.val_known, **params["dataset"])
 
-        train = TokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
-                                no_label=True)
-        test = TokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
-                                no_label=True, sample_size=params["test_size"])
+        if "add_intent" in params and params["add_intent"]:
+            train = TokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"], 
+                                     x["source_intent"]), tokenizer, no_label=True)
+            test = TokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"],
+                                    x["source_intent"]), tokenizer, no_label=True, sample_size=params["test_size"])
+        else:
+            train = TokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
+                                    no_label=True)
+            test = TokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"]), tokenizer, 
+                                    no_label=True, sample_size=params["test_size"])          
 
     else:
         if "curriculum_dataset" not in params:
@@ -300,12 +311,74 @@ def setup_separate_gpt2(gpt2, tokenizer, fshandler, params):
         )
         raw_test = SBERTDataset(fshandler.val_known, **params["val_dataset"])
 
-        train = IterableTokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"]), 
-                                         tokenizer, no_label=True)
-        test = IterableTokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"]), 
-                                        tokenizer, no_label=True)
+        if "add_intent" in params and params["add_intent"]:
+            train = IterableTokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"],
+                                            x["source_intent"]), tokenizer, no_label=True)
+            test = IterableTokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"],
+                                            x["source_intent"]), tokenizer, no_label=True)
+        else:
+            train = IterableTokenizedDataset(raw_train, lambda x: template(x["source_text"], x["other_text"]), 
+                                            tokenizer, no_label=True)
+            test = IterableTokenizedDataset(raw_test, lambda x: template(x["source_text"], x["other_text"]), 
+                                            tokenizer, no_label=True)
         
     return gpt2, train, test
+
+
+def setup_separate_t5(t5, tokenizer, fshandler, params):
+    def template_encoder(source, intent=None):
+        if intent is not None:
+            return f"{intent}<sep>{source}"
+        else:
+            return source
+    def template_decoder(other):
+        return f"<start>{other}<end>"
+
+    if "curriculum" not in params or not params["curriculum"]:
+        if "test_size" not in params:
+            params["test_size"] = None
+
+        raw_train = SBERTDataset(fshandler.known, **params["dataset"])
+        raw_test = SBERTDataset(fshandler.val_known, **params["dataset"])
+
+        if "add_intent" in params and params["add_intent"]:
+            train = T5TokenizedDataset(raw_train, lambda x: template_encoder(x["source_text"], x["source_intent"]), 
+                                       lambda x: template_decoder(x["other_text"]), tokenizer)
+            test = T5TokenizedDataset(raw_test, template_encoder(x["source_text"], x["source_intent"]),
+                                      lambda x: template_decoder(x["other_text"]), tokenizer,
+                                      sample_size=params["test_size"])
+        else:
+            train = T5TokenizedDataset(raw_train, lambda x: template_encoder(x["source_text"]), 
+                                       lambda x: template_decoder(x["other_text"]), tokenizer)
+            test = T5TokenizedDataset(raw_test, lambda x: template_encoder(x["source_text"]), 
+                                      lambda x: template_decoder(x["other_text"]), tokenizer, 
+                                      sample_size=params["test_size"])          
+
+    else:
+        if "curriculum_dataset" not in params:
+            params["curriculum_dataset"] = {}
+
+        raw_train = CurriculumIterableDataset(
+            SortingDataset(fshandler.known, **params["train_dataset"]),
+            **params["curriculum_dataset"]
+        )
+        raw_test = SBERTDataset(fshandler.val_known, **params["val_dataset"])
+
+        if "add_intent" in params and params["add_intent"]:
+            train = IterableT5TokenizedDataset(raw_train, lambda x: template_encoder(x["source_text"], 
+                                               x["source_intent"]), lambda x: template_decoder(x["other_text"]), 
+                                               tokenizer)
+            test = IterableT5TokenizedDataset(raw_test, template_encoder(x["source_text"], x["source_intent"]),
+                                              lambda x: template_decoder(x["other_text"]), tokenizer,
+                                              sample_size=params["test_size"])
+        else:
+            train = IterableT5TokenizedDataset(raw_train, lambda x: template_encoder(x["source_text"]), 
+                                               lambda x: template_decoder(x["other_text"]), tokenizer)
+            test = IterableT5TokenizedDataset(raw_test, lambda x: template_encoder(x["source_text"]), 
+                                              lambda x: template_decoder(x["other_text"]), tokenizer, 
+                                              sample_size=params["test_size"])  
+        
+    return t5, train, test
 
 
 def setup_entailment_roberta(roberta, tokenizer, fshandler, params):
