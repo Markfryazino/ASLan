@@ -12,6 +12,7 @@ import pandas as pd
 from tqdm.auto import tqdm, trange
 from datasets import set_caching_enabled
 from collections import Counter
+from math import ceil
 
 
 set_caching_enabled(False)
@@ -270,7 +271,7 @@ class CurriculumIterableDataset(torch.utils.data.IterableDataset):
             if self.warmup_samples == 0:
                 self.boundary = len(self.source)
             else:
-                self.boundary = int(self.step / self.warmup_samples * len(self.source))
+                self.boundary = int(ceil(self.step / self.warmup_samples * len(self.source)))
                 self.boundary = min(self.boundary, len(self.source))
 
             idx = np.random.randint(0, self.boundary)
@@ -429,23 +430,39 @@ class T5TokenizedDataset(torch.utils.data.Dataset):
 
 
 class IterableT5TokenizedDataset(torch.utils.data.IterableDataset):
-    def __init__(self, source_dataset, builder_input, builder_labels, tokenizer, sample_size=None):
-        self.source = T5TokenizedDataset(source_dataset, builder_input, builder_labels, tokenizer, sample_size)
+    def __init__(self, source_dataset, builder_input, builder_labels, tokenizer):
+        self.source = source_dataset
+        self.builder_input = builder_input
+        self.builder_labels = builder_labels
+        self.tokenizer = tokenizer
+
     def __len__(self):
         return len(self.source)
+
     def __iter__(self):
-        for i in range(len(self.source)):
-            yield self.source[i]
+        for source_example in iter(self.source):
+            inputs = self.tokenizer(self.builder_input(source_example), return_tensors="pt").input_ids.squeeze()
+            labels = self.tokenizer(self.builder_labels(source_example), return_tensors="pt").input_ids.squeeze()
+
+            yield {"input_ids": inputs, "labels": labels}
 
 
 class IterableTokenizedDataset(torch.utils.data.IterableDataset):
-    def __init__(self, source_dataset, builder, tokenizer, sample_size=None, no_label=False):
-        self.source = TokenizedDataset(source_dataset, builder, tokenizer, sample_size, no_label)
+    def __init__(self, source_dataset, builder, tokenizer, no_label=False):
+        self.source = source_dataset
+        self.builder = builder
+        self.tokenizer = tokenizer
+        self.no_label = no_label
+
     def __len__(self):
         return len(self.source)
+
     def __iter__(self):
-        for i in range(len(self.source)):
-            yield self.source[i]
+        for source_example in iter(self.source):
+            tokenized = self.tokenizer(self.builder(source_example))
+            if ("label" in source_example) and not self.no_label:
+                tokenized.update({"label": source_example["label"]})
+            yield tokenized
 
 
 def analyze_log_dataset(data, top_k):
@@ -553,12 +570,17 @@ class FewShotHandler():
             correct += self.ui_dataset[idx + current_prediction.item()]["label"]
         return {"accuracy": correct / len(self.unknown)}
     
-    def eval_as_1nn(self, model, tokenizer, dataset, batch_size, separator):
+    def eval_as_1nn(self, model, tokenizer, dataset, batch_size, separator, add_intent=False):
 
         collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
-        tokenized_dataset = TokenizedDataset(dataset, lambda x: x["text_unknown"] + \
-                                             separator + x["text_known"], tokenizer)
-        
+
+        if add_intent:
+            tokenized_dataset = TokenizedDataset(dataset, lambda x: x["intent_known"] + separator + \
+                                                 x["text_known"] + separator + x["text_unknown"], tokenizer)
+        else:
+            tokenized_dataset = TokenizedDataset(dataset, lambda x: x["text_known"] + \
+                                                separator + x["text_unknown"], tokenizer)
+
         loader = torch.utils.data.DataLoader(tokenized_dataset, batch_size=batch_size, shuffle=False,
                                              collate_fn=collator)
         
@@ -619,7 +641,8 @@ class FewShotHandler():
     def eval_uu(self, model, tokenizer, batch_size=64, separator="<sep>"):
         return self.eval_as_1nn(model, tokenizer, self.uu_dataset, batch_size, separator)
 
-    def eval_stuu(self, model, tokenizer, fake_known=None, sbert=None, top_k=10, batch_size=64, separator="<sep>"):
+    def eval_stuu(self, model, tokenizer, fake_known=None, sbert=None, top_k=10, batch_size=64, separator="<sep>",
+                  add_intent=False):
         if (sbert is None) and ("sbert" in self.state):
             self.log("Found sbert in fshandler state, using it")
             sbert = self.state["sbert"]
@@ -638,7 +661,7 @@ class FewShotHandler():
         self.stuu_dataset = STUUDataset(known_for_stuu, self.unknown, logger=self.logger, sbert=sbert, 
                                         top_k=top_k, device=self.device)
     
-        return self.eval_as_1nn(model, tokenizer, self.stuu_dataset, batch_size, separator)
+        return self.eval_as_1nn(model, tokenizer, self.stuu_dataset, batch_size, separator, add_intent=add_intent)
 
     def eval_pure_sbert(self, sbert=None):
         if (sbert is None) and ("sbert" in self.state):

@@ -12,7 +12,7 @@ import pandas as pd
 
 from environment import FewShotHandler, TokenizedDataset, UIDataset, UUDataset, STUUDataset, \
                         SBERTDataset, IEFormatDataset, SortingDataset, CurriculumIterableDataset, \
-                        IterableTokenizedDataset
+                        IterableTokenizedDataset, T5TokenizedDataset, IterableT5TokenizedDataset
 from wandb_callback import WandbPrefixCallback, SBERTWandbCallback
 
 from sentence_transformers import SentenceTransformer, LoggingHandler, losses, InputExample
@@ -344,7 +344,7 @@ def setup_separate_t5(t5, tokenizer, fshandler, params):
         if "add_intent" in params and params["add_intent"]:
             train = T5TokenizedDataset(raw_train, lambda x: template_encoder(x["source_text"], x["source_intent"]), 
                                        lambda x: template_decoder(x["other_text"]), tokenizer)
-            test = T5TokenizedDataset(raw_test, template_encoder(x["source_text"], x["source_intent"]),
+            test = T5TokenizedDataset(raw_test, lambda x: template_encoder(x["source_text"], x["source_intent"]),
                                       lambda x: template_decoder(x["other_text"]), tokenizer,
                                       sample_size=params["test_size"])
         else:
@@ -368,15 +368,13 @@ def setup_separate_t5(t5, tokenizer, fshandler, params):
             train = IterableT5TokenizedDataset(raw_train, lambda x: template_encoder(x["source_text"], 
                                                x["source_intent"]), lambda x: template_decoder(x["other_text"]), 
                                                tokenizer)
-            test = IterableT5TokenizedDataset(raw_test, template_encoder(x["source_text"], x["source_intent"]),
-                                              lambda x: template_decoder(x["other_text"]), tokenizer,
-                                              sample_size=params["test_size"])
+            test = IterableT5TokenizedDataset(raw_test, lambda x: template_encoder(x["source_text"], x["source_intent"]),
+                                              lambda x: template_decoder(x["other_text"]), tokenizer)
         else:
             train = IterableT5TokenizedDataset(raw_train, lambda x: template_encoder(x["source_text"]), 
                                                lambda x: template_decoder(x["other_text"]), tokenizer)
             test = IterableT5TokenizedDataset(raw_test, lambda x: template_encoder(x["source_text"]), 
-                                              lambda x: template_decoder(x["other_text"]), tokenizer, 
-                                              sample_size=params["test_size"])  
+                                              lambda x: template_decoder(x["other_text"]), tokenizer)  
         
     return t5, train, test
 
@@ -418,8 +416,6 @@ def setup_knn_roberta(roberta, tokenizer, fshandler, params):
         test_uu = UUDataset(fshandler.known, fshandler.val_known)
     else:
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        support_uu = STUUDataset(fshandler.known, fshandler.known, top_k=params["top_k"], device=device, 
-                                 sbert=sbert)
 
         pair_numbers = {
             "hard_positive": fshandler.support_size,
@@ -442,10 +438,18 @@ def setup_knn_roberta(roberta, tokenizer, fshandler, params):
     if "test_size" not in params:
         params["test_size"] = None
 
-    support_set = TokenizedDataset(support_uu, lambda x: x["source_text"] + \
-                                   params["separator"] + x["other_text"], tokenizer)
-    test_set = TokenizedDataset(test_uu, lambda x: x["text_known"] + \
-                                params["separator"] + x["text_unknown"], tokenizer, sample_size=params["test_size"])
+    if "add_intent" in params and params["add_intent"]:
+        support_set = TokenizedDataset(support_uu, lambda x: x["source_intent"] + params["separator"] + \
+                                       x["source_text"] + params["separator"] + x["other_text"], tokenizer)
+        test_set = TokenizedDataset(test_uu, lambda x: x["intent_known"] + params["separator"] + x["text_known"] + \
+                                    params["separator"] + x["text_unknown"], tokenizer,
+                                    sample_size=params["test_size"])
+    else:
+        support_set = TokenizedDataset(support_uu, lambda x: x["source_text"] + \
+                                    params["separator"] + x["other_text"], tokenizer)
+        test_set = TokenizedDataset(test_uu, lambda x: x["text_known"] + \
+                                    params["separator"] + x["text_unknown"], tokenizer,
+                                    sample_size=params["test_size"])
 
     return roberta, support_set, test_set
 

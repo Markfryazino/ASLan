@@ -19,7 +19,7 @@ from few_shot_training import laboratory_finetuning, setup_bert, setup_knn_rober
                               setup_pretraining_similarity_gpt2, setup_separate_gpt2, setup_separate_t5
 from utils import set_random_seed, get_timestamp_str, append_prefix, offline
 from sentence_transformers import SentenceTransformer
-from generation import gpt2_generate_fake_knowns, gpt2_generate_fake_similars
+from generation import gpt2_generate_fake_knowns, gpt2_generate_fake_similars, t5_generate_fake_similars
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -445,7 +445,7 @@ def encode_fshandler_labels(fshandler, params):
 
 
 def evaluate_knn_roberta(fshandler, params):
-    settings = {key: val for key, val in params.items() if key in ["top_k", "batch_size"]}
+    settings = {key: val for key, val in params.items() if key in ["top_k", "batch_size", "add_intent"]}
     model = fshandler.state["knn_roberta_model"]
     tokenizer = fshandler.state["knn_roberta_tokenizer"]
 
@@ -496,6 +496,29 @@ def synthesize_fake_similar(fshandler, params):
                                                  fshandler.known["text"], fshandler.known["intent"],
                                                  example_size, 0, settings)
     fshandler.state["fake_similar"] = concatenate_datasets([fake_positives, fake_negatives])
+    return {}
+
+
+def synthesize_fake_similar_with_t5(fshandler, params):
+    example_size = 1
+    if "example_size" in params:
+        example_size = params["example_size"]
+
+    settings = None
+    if "generation" in params:
+        settings = params["generation"]
+
+    fake_positives = gpt2_generate_fake_similars(fshandler.state["positive_gpt2_model"], 
+                                                 fshandler.state["positive_gpt2_tokenizer"],
+                                                 fshandler.known["text"], fshandler.known["intent"],
+                                                 example_size, 1, settings)
+    # fake_negatives = gpt2_generate_fake_similars(fshandler.state["negative_gpt2_model"], 
+    #                                              fshandler.state["negative_gpt2_tokenizer"],
+    #                                              fshandler.known["text"], fshandler.known["intent"],
+    #                                              example_size, 0, settings)
+    # fshandler.state["fake_similar"] = concatenate_datasets([fake_positives, fake_negatives])
+
+    fshandler.state["fake_similar"] = fake_positives
     return {}
 
 

@@ -168,7 +168,7 @@ def generate_response(model, tokenizer, source, builder, params=None):
     )
 
     result = tokenizer.decode(generated[0], skip_special_tokens=False)
-    return result[len(prompt):].replace("<end>", "").strip()
+    return result
 
 
 def gpt2_generate_fake_knowns(model, tokenizer, intents, intent_size):
@@ -191,6 +191,33 @@ def gpt2_generate_fake_similars(model, tokenizer, texts, intents, example_size, 
         for text, intent in zip(texts, intents):
             for i in range(example_size):
                 cur_gen = generate_response_from_sep(model, tokenizer, text, params)
+                cur_intent = "generated" if label == 0 else intent
+
+                text_unknown.append(text)
+                text_known.append(cur_gen)
+                label_h.append(label)
+                intent_unknown.append(intent)
+                intent_known.append(cur_intent)
+
+                pbar.update(1)
+
+    return Dataset.from_dict({
+        "text_unknown": text_unknown,
+        "text_known": text_known,
+        "label": label_h,
+        "intent_unknown": intent_unknown,
+        "intent_known": intent_known
+    }).shuffle(load_from_cache_file=False)
+
+
+def t5_generate_fake_similars(model, tokenizer, texts, intents, example_size, label, params=None):
+    text_unknown, text_known, label_h, intent_unknown, intent_known = [], [], [], [], []
+    with tqdm(total=len(texts) * example_size) as pbar:
+        for text, intent in zip(texts, intents):
+            for i in range(example_size):
+                source = {"text": text, "intent": intent}
+                cur_gen = generate_response(model, tokenizer, source, 
+                                            lambda x: x["text"] + "<sep>" + x["intent"], params)
                 cur_intent = "generated" if label == 0 else intent
 
                 text_unknown.append(text)
