@@ -5,7 +5,7 @@ import scipy.spatial.distance
 import torch
 import json
 from datasets import load_dataset, ClassLabel, load_metric, DatasetDict, concatenate_datasets, Dataset
-from transformers import DataCollatorWithPadding
+from transformers import DataCollatorWithPadding, DataCollatorForSeq2Seq
 from sentence_transformers import SentenceTransformer, InputExample
 import os
 import pandas as pd
@@ -570,8 +570,8 @@ class FewShotHandler():
             correct += self.ui_dataset[idx + current_prediction.item()]["label"]
         return {"accuracy": correct / len(self.unknown)}
     
-    def eval_as_1nn(self, model, tokenizer, dataset, batch_size, separator, add_intent=False):
 
+    def get_roberta_predictions(self, model, tokenizer, dataset, batch_size, separator, add_intent=False):
         collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
 
         if add_intent:
@@ -594,6 +594,45 @@ class FewShotHandler():
                 predictions.append(output["logits"])
                 
         predictions = torch.cat(predictions)[:,1]
+        return predictions
+
+    
+    def get_t5_predictions(self, model, tokenizer, dataset, batch_size, separator, add_intent=False):
+        def template_encoder(source, intent=None):
+            if intent is not None:
+                return f"{intent}<sep>{source}"
+            else:
+                return source
+        def template_decoder(other):
+            return f"<start>{other}<end>"
+
+        collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
+
+        if add_intent:
+            tdata = T5TokenizedDataset(dataset, lambda x: template_encoder(x["text_known"], x["intent_known"]), 
+                                       lambda x: template_decoder(x["text_unknown"]), tokenizer)
+        else:
+            tdata = T5TokenizedDataset(raw_train, lambda x: template_encoder(x["text_known"]), 
+                                       lambda x: template_decoder(x["text_unknown"]), tokenizer) 
+        
+        loader = torch.utils.data.DataLoader(tdata, batch_size=batch_size, shuffle=False, collate_fn=collator)
+
+        model.eval()
+        criterion = torch.nn.CrossEntropyLoss(ignore_index=-100, reduction="none")
+
+        with torch.no_grad():
+            predictions = []
+            for batch in tqdm(loader):
+                output = model(**batch.to("cuda"))
+                lm_logits = output.logits
+                loss = criterion(lm_logits.view(-1, lm_logits.size(-1)), 
+                                 batch["labels"].view(-1)).view(batch["labels"].size(0), -1)
+                final_losses = loss.sum(axis=1) / (batch["labels"] != -100).sum(axis=1)
+                predictions.append(-final_losses)
+
+        return predictions
+
+    def eval_as_1nn(self, predictions, dataset):
         
         step = len(dataset) // len(self.unknown)
         correct = 0
@@ -642,7 +681,7 @@ class FewShotHandler():
         return self.eval_as_1nn(model, tokenizer, self.uu_dataset, batch_size, separator)
 
     def eval_stuu(self, model, tokenizer, fake_known=None, sbert=None, top_k=10, batch_size=64, separator="<sep>",
-                  add_intent=False):
+                  add_intent=False, setup="roberta"):
         if (sbert is None) and ("sbert" in self.state):
             self.log("Found sbert in fshandler state, using it")
             sbert = self.state["sbert"]
@@ -661,7 +700,14 @@ class FewShotHandler():
         self.stuu_dataset = STUUDataset(known_for_stuu, self.unknown, logger=self.logger, sbert=sbert, 
                                         top_k=top_k, device=self.device)
     
-        return self.eval_as_1nn(model, tokenizer, self.stuu_dataset, batch_size, separator, add_intent=add_intent)
+        if setup == "roberta":
+            predictions = self.get_roberta_predictions(model, tokenizer, self.stuu_dataset, batch_size, separator, 
+                                                       add_intent)
+        elif setup == "t5":
+            predictions = self.get_t5_predictions(model, tokenizer, self.stuu_dataset, batch_size, separator, 
+                                                  add_intent)    
+      
+        return self.eval_as_1nn(predictions, self.stuu_dataset)
 
     def eval_pure_sbert(self, sbert=None):
         if (sbert is None) and ("sbert" in self.state):

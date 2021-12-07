@@ -147,6 +147,7 @@ class GenerationTypedDataset(torch.utils.data.Dataset):
 
 
 def generate_response(model, tokenizer, source, builder, params=None):
+
     if params is None:
         params = {}
 
@@ -210,21 +211,44 @@ def gpt2_generate_fake_similars(model, tokenizer, texts, intents, example_size, 
     }).shuffle(load_from_cache_file=False)
 
 
-def t5_generate_fake_similars(model, tokenizer, texts, intents, example_size, label, params=None):
+def get_bad_idxs(prompt, tokenizer, n_bad_words=2, verbose=False, remove_last=False):
+    words = prompt.split()
+    n_bad_words = min(n_bad_words, len(words))
+    bad_words = np.random.choice(words, n_bad_words, replace=False).tolist()
+
+    if verbose:
+        print(f"Banned words: {bad_words}")
+
+    bad_words += [" " + word for word in bad_words]
+
+    bad_idxs = []
+    for b in bad_words:
+        if not remove_last:
+            bad_idxs.append(tokenizer.encode(b))
+        else:
+            bad_idxs.append(tokenizer.encode(b)[:-1])
+    return bad_idxs
+
+
+def t5_generate_fake_similars(model, tokenizer, texts, intents, example_size, label, n_bad_words=0, params=None):
     text_unknown, text_known, label_h, intent_unknown, intent_known = [], [], [], [], []
     with tqdm(total=len(texts) * example_size) as pbar:
         for text, intent in zip(texts, intents):
             for i in range(example_size):
                 source = {"text": text, "intent": intent}
+
+                if n_bad_words > 0:
+                    params["bad_words_ids"] = get_bad_idxs(text, tokenizer, n_bad_words, remove_last=True)
+
                 cur_gen = generate_response(model, tokenizer, source, 
                                             lambda x: x["text"] + "<sep>" + x["intent"], params)
                 cur_intent = "generated" if label == 0 else intent
 
-                text_unknown.append(text)
-                text_known.append(cur_gen)
+                text_known.append(text)
+                text_unknown.append(cur_gen.replace("<end>", "").split("<start>")[1][1:])
                 label_h.append(label)
-                intent_unknown.append(intent)
-                intent_known.append(cur_intent)
+                intent_known.append(intent)
+                intent_unknown.append(cur_intent)
 
                 pbar.update(1)
 

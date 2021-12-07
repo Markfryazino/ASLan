@@ -453,9 +453,23 @@ def evaluate_knn_roberta(fshandler, params):
     if ("use_fakes" in params) and params["use_fakes"]:
         fakes = fshandler.state["fake_known"]
 
-    eval_result = fshandler.eval_stuu(model, tokenizer, fakes, **settings)
+    eval_result = fshandler.eval_stuu(model, tokenizer, fakes, **settings, setup="roberta")
     if "verbose" not in params or not params["verbose"]:
         del eval_result["details"]
+
+    return eval_result
+
+
+def evaluate_t5(fshandler, params):
+    settings = {key: val for key, val in params.items() if key in ["top_k", "batch_size", "add_intent"]}
+    model = fshandler.state["t5_model"]
+    tokenizer = fshandler.state["t5_tokenizer"]
+
+    fakes = None
+    if ("use_fakes" in params) and params["use_fakes"]:
+        fakes = fshandler.state["fake_known"]
+
+    eval_result = fshandler.eval_stuu(model, tokenizer, fakes, **settings, setup="t5")
 
     return eval_result
 
@@ -503,15 +517,19 @@ def synthesize_fake_similar_with_t5(fshandler, params):
     example_size = 1
     if "example_size" in params:
         example_size = params["example_size"]
+    if "n_bad_words" in params:
+        n_bad_words = params["n_bad_words"]
+    else:
+        n_bad_words = 0
 
     settings = None
     if "generation" in params:
         settings = params["generation"]
 
-    fake_positives = gpt2_generate_fake_similars(fshandler.state["positive_gpt2_model"], 
-                                                 fshandler.state["positive_gpt2_tokenizer"],
-                                                 fshandler.known["text"], fshandler.known["intent"],
-                                                 example_size, 1, settings)
+    fake_positives = t5_generate_fake_similars(fshandler.state["positive_t5_model"], 
+                                               fshandler.state["positive_t5_tokenizer"],
+                                               fshandler.known["text"], fshandler.known["intent"],
+                                               example_size, 1, n_bad_words, settings)
     # fake_negatives = gpt2_generate_fake_similars(fshandler.state["negative_gpt2_model"], 
     #                                              fshandler.state["negative_gpt2_tokenizer"],
     #                                              fshandler.known["text"], fshandler.known["intent"],
