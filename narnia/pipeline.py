@@ -470,6 +470,8 @@ def evaluate_t5(fshandler, params):
         fakes = fshandler.state["fake_known"]
 
     eval_result = fshandler.eval_stuu(model, tokenizer, fakes, **settings, setup="t5")
+    if "verbose" not in params or not params["verbose"]:
+        del eval_result["details"]
 
     return eval_result
 

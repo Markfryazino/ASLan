@@ -253,9 +253,9 @@ def t5_generate_fake_similars(model, tokenizer, texts, intents, example_size, la
                 pbar.update(1)
 
     return Dataset.from_dict({
-        "text_unknown": text_unknown,
-        "text_known": text_known,
+        "other_text": text_unknown,
+        "source_text": text_known,
         "label": label_h,
-        "intent_unknown": intent_unknown,
-        "intent_known": intent_known
+        "other_intent": intent_unknown,
+        "source_intent": intent_known
     }).shuffle(load_from_cache_file=False)

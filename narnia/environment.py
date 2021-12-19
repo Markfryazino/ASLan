@@ -630,9 +630,9 @@ class FewShotHandler():
                 final_losses = loss.sum(axis=1) / (batch["labels"] != -100).sum(axis=1)
                 predictions.append(-final_losses)
 
-        return predictions
+        return torch.cat(predictions)
 
-    def eval_as_1nn(self, predictions, dataset):
+    def eval_as_1nn(self, predictions, dataset, prefix=""):
         
         step = len(dataset) // len(self.unknown)
         correct = 0
@@ -668,9 +668,9 @@ class FewShotHandler():
         self.state["eval_log_dataset"] = Dataset.from_dict(log_dataset)
         self.state["eval_details"] = details
         self.state["eval_dataset_analysis"] = analyze_log_dataset(self.state["eval_log_dataset"], step)
-        with open("./results/eval_analysis.json", "w") as f:
+        with open(f"./results/{prefix}_eval_analysis.json", "w") as f:
             json.dump(self.state["eval_dataset_analysis"], f)
-        wandb.save("./results/eval_analysis.json")
+        wandb.save(f"./results/{prefix}_eval_analysis.json")
 
         mean_filtered_corrects = np.mean([el["number_of_correct"] for el in self.state["eval_dataset_analysis"]])
 
@@ -681,7 +681,7 @@ class FewShotHandler():
         return self.eval_as_1nn(model, tokenizer, self.uu_dataset, batch_size, separator)
 
     def eval_stuu(self, model, tokenizer, fake_known=None, sbert=None, top_k=10, batch_size=64, separator="<sep>",
-                  add_intent=False, setup="roberta"):
+                  add_intent=False, setup="roberta", prefix=""):
         if (sbert is None) and ("sbert" in self.state):
             self.log("Found sbert in fshandler state, using it")
             sbert = self.state["sbert"]
@@ -707,7 +707,7 @@ class FewShotHandler():
             predictions = self.get_t5_predictions(model, tokenizer, self.stuu_dataset, batch_size, separator, 
                                                   add_intent)    
       
-        return self.eval_as_1nn(predictions, self.stuu_dataset)
+        return self.eval_as_1nn(predictions, self.stuu_dataset, prefix=prefix)
 
     def eval_pure_sbert(self, sbert=None):
         if (sbert is None) and ("sbert" in self.state):
