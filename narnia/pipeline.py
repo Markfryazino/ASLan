@@ -154,7 +154,7 @@ class FewShotLaboratory:
 
         return run_metrics
 
-    def run(self, random_state):
+    def run(self, random_state, fshandler=None):
         wandb_run = wandb.init(**self.wandb_args, save_code=True)
         self.config["random_state"] = random_state
 
@@ -165,10 +165,13 @@ class FewShotLaboratory:
 
         set_random_seed(random_state)
 
-        set_data = next(self.generator)
-        fshandler = FewShotHandler(self.support_size, set_data["test"], set_data["train"], device=self.device, 
-                                   logger=self.logger, extra_known=set_data["extra"], val_known=set_data["val"])  
-        fshandler.state.update(self.state)
+        if fshandler is None:
+            set_data = next(self.generator)
+            fshandler = FewShotHandler(self.support_size, set_data["test"], set_data["train"], device=self.device, 
+                                    logger=self.logger, extra_known=set_data["extra"], val_known=set_data["val"])  
+            fshandler.state.update(self.state)
+        else:
+            self.logger("Using predefined fshandler!")
 
         run_metrics = {}
 

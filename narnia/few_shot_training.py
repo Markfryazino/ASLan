@@ -417,12 +417,16 @@ def setup_knn_roberta(roberta, tokenizer, fshandler, params):
     else:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        pair_numbers = {
-            "hard_positive": fshandler.support_size,
-            "hard_negative": fshandler.support_size,
-            "easy_positive": 0,
-            "easy_negative": 0
-        }
+        if "pair_numbers" not in params:
+            pair_numbers = {
+                "hard_positive": fshandler.support_size,
+                "hard_negative": fshandler.support_size,
+                "easy_positive": 0,
+                "easy_negative": 0
+            }
+        else:
+            pair_numbers = params["pair_numbers"]
+
         support_uu = SBERTDataset(fshandler.known, sbert=sbert, logger=fshandler.log, pair_numbers=pair_numbers,
                                   device=device)
         test_uu = STUUDataset(fshandler.known, fshandler.val_known, sbert=sbert, 
