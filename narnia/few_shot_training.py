@@ -158,7 +158,8 @@ def laboratory_finetuning(model, tokenizer, fshandler, setup_function, prefix, l
 
     trainer.train()
 
-    final_metrics = trainer.evaluate(support_set, metric_key_prefix="train")
+    if "evaluate_on_train" in params and not params["evaluate_on_train"]:
+        final_metrics = trainer.evaluate(support_set, metric_key_prefix="train")
     final_metrics.update(trainer.evaluate(test_set, metric_key_prefix="test"))
 
     return model, final_metrics
