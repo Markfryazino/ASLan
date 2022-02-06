@@ -114,8 +114,9 @@ class FewShotLaboratory:
         self.logger("Finishing")
         wandb_run = wandb.init(**self.wandb_args, job_type="just-logging")
 
-        for artifact in self.artifacts.values():
-            wandb_run.use_artifact(f"broccoliman/aslan/{artifact}")
+        if os.getenv("WANDB_MODE") != "offline":
+            for artifact in self.artifacts.values():
+                wandb_run.use_artifact(f"broccoliman/aslan/{artifact}")
 
         wandb.log(logs)
         wandb.finish()
@@ -124,8 +125,9 @@ class FewShotLaboratory:
         wandb_run = wandb.init(**self.wandb_args, save_code=True)
         self.config["random_state"] = random_state
 
-        for artifact in self.artifacts.values():
-            wandb_run.use_artifact(f"broccoliman/aslan/{artifact}")
+        if os.getenv("WANDB_MODE") != "offline":
+            for artifact in self.artifacts.values():
+                wandb_run.use_artifact(f"broccoliman/aslan/{artifact}")
 
         self.logger(f"Starting pretraining run with random_state = {random_state}")  
 
@@ -158,8 +160,9 @@ class FewShotLaboratory:
         wandb_run = wandb.init(**self.wandb_args, save_code=True)
         self.config["random_state"] = random_state
 
-        for artifact in self.artifacts.values():
-            wandb_run.use_artifact(f"broccoliman/aslan/{artifact}")
+        if os.getenv("WANDB_MODE") != "offline":
+            for artifact in self.artifacts.values():
+                wandb_run.use_artifact(f"broccoliman/aslan/{artifact}")
 
         self.logger(f"Starting run with random_state = {random_state}")
 

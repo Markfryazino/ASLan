@@ -1,8 +1,15 @@
 from datasets import set_caching_enabled
 set_caching_enabled(False)
 
-from pipeline import encode_fshandler_labels, load_knn_roberta, finetune_knn_roberta, evaluate_knn_roberta
+import sys
+sys.path.append("../narnia")
 
+from pipeline import encode_fshandler_labels, load_knn_roberta, finetune_knn_roberta, evaluate_knn_roberta, \
+    FewShotLaboratory
+
+import os
+os.environ["OFFLINE"] = "True"
+os.environ["WANDB_MODE"] = "offline"
 
 BATCH_SIZE = 128
 POSSIBLE_SIZES = [5, 10, 20, 30]
@@ -10,7 +17,7 @@ RANDOM_STATES = [0, 1, 2, 3]
 
 COMMON_PARAMS = {
     "load_knn_roberta": {
-        "roberta_path": "artifacts/roberta-QQP:v0"
+        "roberta_path": "../../data/roberta-QQP:v0"
     },
     "finetune_knn_roberta": {
         "top_k": 10,
@@ -69,7 +76,8 @@ for support_size in POSSIBLE_SIZES:
         val_size=5,
         logger=print,
         wandb_args=WANDB_ARGS,
-        params=COMMON_PARAMS)
+        params=COMMON_PARAMS,
+        root_path="../../data")
 
     lab.init_data("SOAD:v2/CLINC150", -1)
 
