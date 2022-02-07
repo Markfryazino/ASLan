@@ -509,13 +509,13 @@ class FewShotHandler():
         
         self.intents = self.unknown.unique("intent")
         self.intent_num = len(self.intents)
-        self.intent2label = {intent: label for label, intent in enumerate(self.intents)}
-        self.unknown = self.unknown.map(lambda x: encode_example(x, self.intent2label), batched=False,
-                                        load_from_cache_file=False)
+        # self.intent2label = {intent: label for label, intent in enumerate(self.intents)}
+        # self.unknown = self.unknown.map(lambda x: encode_example(x, self.intent2label), batched=False,
+        #                                 load_from_cache_file=False)
 
         if known is not None:
-            self.known = self.known.map(lambda x: encode_example(x, self.intent2label), batched=False,
-                                        load_from_cache_file=False)
+        #     self.known = self.known.map(lambda x: encode_example(x, self.intent2label), batched=False,
+        #                                 load_from_cache_file=False)
 
             known_intents_array = np.array(known["intent"])
             self.known_intent_idxs = {}
@@ -690,8 +690,8 @@ class FewShotHandler():
         known_for_stuu = None
         if fake_known is not None:
             self.log("Using fake data for prediction!")
-            fake_known = fake_known.map(lambda x: encode_example(x, self.intent2label), batched=False,
-                                        load_from_cache_file=False)
+        #     fake_known = fake_known.map(lambda x: encode_example(x, self.intent2label), batched=False,
+        #                                 load_from_cache_file=False)
 
             known_for_stuu = concatenate_datasets([self.known, fake_known])
         else:
