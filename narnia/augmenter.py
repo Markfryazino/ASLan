@@ -63,7 +63,8 @@ class Augmenter:
 
     def train_corrector(self, params):
         tokenizer = AutoTokenizer.from_pretrained(params["model"])
-        model = AutoModelForSequenceClassification.from_pretrained(params["model"])
+        model = AutoModelForSequenceClassification.from_pretrained(params["model"], 
+                                                                   num_labels=len(self.unique_intents))
 
         training_params = None if "training" not in params else params["training"]
         default_wandb_args = {
