@@ -87,8 +87,6 @@ def model_finetuning(model, tokenizer, fshandler, setup_function, use_artifacts,
     if "training" not in params:
         params["training"] = {}
 
-    os.environ["WANDB_LOG_MODEL"] = str(log_model).lower()
-
     collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
     model, support_set, test_set = setup_function(model, tokenizer, fshandler, params)
     
@@ -498,11 +496,8 @@ def sbert_training(model, train_data, prefix, eval_data=None, params=None):
 
 
 def naive_finetuning(model, tokenizer, known, val_known, unknown, wandb_args, params=None):
-    
     if params is None:
         params = {}
-
-    os.environ["WANDB_LOG_MODEL"] = str(log_model).lower()
 
     collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
     
@@ -511,20 +506,24 @@ def naive_finetuning(model, tokenizer, known, val_known, unknown, wandb_args, pa
     settings = COMMON_ARGS.copy()
     settings.update(params)
 
+    train = TokenizedDataset(known, lambda x: x["text"], tokenizer)
+    val = TokenizedDataset(val_known, lambda x: x["text"], tokenizer)
+    test = TokenizedDataset(unknown, lambda x: x["text"], tokenizer)
+
     trainer = Trainer(
         model=model,
         args=TrainingArguments(**settings), 
-        train_dataset=known,
-        eval_dataset=val_known,
+        train_dataset=train,
+        eval_dataset=val,
         data_collator=collator,
         compute_metrics=compute_metrics
     )
 
     trainer.train()
 
-    final_metrics = trainer.evaluate(known, metric_key_prefix="train")
-    final_metrics.update(trainer.evaluate(val_known, metric_key_prefix="eval"))
-    final_metrics.update(trainer.evaluate(unknown, metric_key_prefix="test"))
+    final_metrics = trainer.evaluate(train, metric_key_prefix="train")
+    final_metrics.update(trainer.evaluate(val, metric_key_prefix="eval"))
+    final_metrics.update(trainer.evaluate(test, metric_key_prefix="test"))
 
     wandb.log(final_metrics)
 

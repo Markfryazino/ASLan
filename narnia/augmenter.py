@@ -77,7 +77,7 @@ class Augmenter:
 
         self.corrector_tokenizer = tokenizer
         self.corrector_model, self.corrector_trainer = naive_finetuning(model, tokenizer, self.known, 
-                self.val_known, self.unknown, wandb_args, params)
+                self.val_known, self.unknown, wandb_args, params["training"])
 
     def correct(self, params):
         def novel_filtering(x):
