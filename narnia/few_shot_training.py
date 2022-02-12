@@ -495,3 +495,38 @@ def sbert_training(model, train_data, prefix, eval_data=None, params=None):
           **training_args)
 
     return model, {"eval_score": evaluator(model)}
+
+
+def naive_finetuning(model, tokenizer, known, val_known, unknown, wandb_args, params=None):
+    
+    if params is None:
+        params = {}
+
+    os.environ["WANDB_LOG_MODEL"] = str(log_model).lower()
+
+    collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
+    
+    run = wandb.init(**wandb_args)
+
+    settings = COMMON_ARGS.copy()
+    settings.update(params)
+
+    trainer = Trainer(
+        model=model,
+        args=TrainingArguments(**settings), 
+        train_dataset=known,
+        eval_dataset=val_known,
+        data_collator=collator,
+        compute_metrics=compute_metrics
+    )
+
+    trainer.train()
+
+    final_metrics = trainer.evaluate(known, metric_key_prefix="train")
+    final_metrics.update(trainer.evaluate(val_known, metric_key_prefix="eval"))
+    final_metrics.update(trainer.evaluate(unknown, metric_key_prefix="test"))
+
+    wandb.log(final_metrics)
+
+    run.finish()
+    return model, trainer
