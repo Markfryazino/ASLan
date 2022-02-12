@@ -516,7 +516,7 @@ def naive_finetuning(model, tokenizer, known, val_known, unknown, wandb_args, pa
         train_dataset=train,
         eval_dataset=val,
         data_collator=collator,
-        compute_metrics=compute_metrics
+        compute_metrics=compute_multiclass_metrics
     )
 
     trainer.train()
