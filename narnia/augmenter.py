@@ -21,6 +21,17 @@ from few_shot_training import naive_finetuning
 from environment import TokenizedDataset, T5TokenizedDataset, SBERTDataset
 
 
+def evaluate_prompt_model(prompt_model, dataloader):
+    prompt_model.eval()
+    total_loss = total_num = 0
+    with torch.inference_mode():
+        for inputs in tqdm(dataloader):
+            loss = prompt_model(inputs.cuda())
+            total_loss += loss.item()
+            total_num += inputs["input_ids"].size(0)
+    return total_loss / total_num
+
+
 class Augmenter:
     def __init__(self, known, val_known, unknown):
         self.known = known
@@ -38,6 +49,9 @@ class Augmenter:
         self.corrector_tokenizer = None
         self.filtered_fakes = None
         self.aug_fakes = None
+
+        self.condition_dataloader = None
+        self.raw_condition = None
         self.prompt_model = None
 
     def init_classlabel(self):
@@ -71,22 +85,12 @@ class Augmenter:
                         prefix_length=30, batch_size=4, max_length=64, num_train_epochs=3,
                         log_steps=25, grad_accum=8, lr=5e-5, wandb_args=None):
 
-        def evaluate(prompt_model, dataloader):
-            prompt_model.eval()
-            total_loss = total_num = 0
-            with torch.inference_mode():
-                for inputs in tqdm(dataloader):
-                    loss = prompt_model(inputs.cuda())
-                    total_loss += loss.item()
-                    total_num += inputs["input_ids"].size(0)
-            return total_loss / total_num
-
         default_wandb_args = {
-            project="aslan",
-            entity="broccoliman",
-            job_type="training",
-            tags=["prefix-tuning", "augmentation"],
-            save_code=True
+            "project": "aslan",
+            "entity": "broccoliman",
+            "job_type": "training",
+            "tags": ["prefix-tuning", "augmentation"],
+            "save_code": True
         }
 
         wandb_args = wandb_args or default_wandb_args
@@ -111,7 +115,7 @@ class Augmenter:
 
         raw_train = SBERTDataset(self.known, **positive_params, sbert=sbert_path)
         raw_test = SBERTDataset(self.val_known, **positive_params, sbert=sbert_path)
-        raw_condition = SBERTDataset(self.known, **condition_params, sbert=sbert_path)
+        self.raw_condition = SBERTDataset(self.known, **condition_params, sbert=sbert_path)
 
         dataset = {}
         dataset["train"] = []
@@ -133,7 +137,7 @@ class Augmenter:
             ))
 
         dataset["condition"] = []
-        for i, val in enumerate(raw_condition):
+        for i, val in enumerate(self.raw_condition):
             dataset["condition"].append(InputExample(
                 guid=i,
                 tgt_text=val["other_text"],
@@ -156,7 +160,7 @@ class Augmenter:
             batch_size=batch_size, shuffle=True, teacher_forcing=True, predict_eos_token=True,
             truncate_method="head")
 
-        condition_dataloader = PromptDataLoader(dataset=dataset["condition"], template=mytemplate, tokenizer=tokenizer, 
+        self.condition_dataloader = PromptDataLoader(dataset=dataset["condition"], template=mytemplate, tokenizer=tokenizer, 
             tokenizer_wrapper_class=WrapperClass, max_seq_length=max_length, decoder_max_length=max_length, 
             batch_size=1, shuffle=True, teacher_forcing=False, predict_eos_token=True,
             truncate_method="head")
@@ -188,43 +192,47 @@ class Augmenter:
         global_step = 0 
         total_loss = 0
         log_num = 0
-        for epoch in range(num_train_epochs):
-            prompt_model.train()
-            for step, inputs in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
-                global_step += 1
-                loss = prompt_model(inputs.cuda())
-                loss.backward()
-                total_loss += loss.item()
 
-                log_num += inputs["input_ids"].size(0)
-                torch.nn.utils.clip_grad_norm_(mytemplate.parameters(), 1.0)
+        with tqdm(total=len(train_dataloader) * num_train_epochs) as pbar:
+            for epoch in range(num_train_epochs):
+                prompt_model.train()
+                for step, inputs in enumerate(train_dataloader):
+                    global_step += 1
+                    loss = prompt_model(inputs.cuda())
+                    loss.backward()
+                    total_loss += loss.item()
 
-                if global_step % grad_accum == 0:
-                    optimizer.step()
-                    scheduler.step()
-                    optimizer.zero_grad()
+                    log_num += inputs["input_ids"].size(0)
+                    torch.nn.utils.clip_grad_norm_(mytemplate.parameters(), 1.0)
 
-                if global_step % log_steps == 0: 
-                    metrics = {
-                        "epoch": epoch,
-                        "global_step": global_step,
-                        "train_loss": total_loss / log_num,
-                        "learning_rate": scheduler.get_last_lr()[0]
-                    }
-                    wandb.log(metrics, step=global_step)
-                    print(metrics)
-                    total_loss = 0
-                    log_num = 0
+                    if global_step % grad_accum == 0:
+                        optimizer.step()
+                        scheduler.step()
+                        optimizer.zero_grad()
 
-            val_loss = evaluate(prompt_model, validation_dataloader)
-            print(f"Epoch {epoch}, validation loss: {val_loss}")
-            wandb.log({"epoch": epoch, "val_loss": val_loss, "global_step": global_step}, step=global_step)
+                    if global_step % log_steps == 0: 
+                        metrics = {
+                            "epoch": epoch,
+                            "global_step": global_step,
+                            "train_loss": total_loss / log_num,
+                            "learning_rate": scheduler.get_last_lr()[0]
+                        }
+                        wandb.log(metrics, step=global_step)
+                        print(metrics)
+                        total_loss = 0
+                        log_num = 0
+
+                    pbar.update(1)
+
+                val_loss = evaluate_prompt_model(prompt_model, validation_dataloader)
+                print(f"Epoch {epoch}, validation loss: {val_loss}")
+                wandb.log({"epoch": epoch, "val_loss": val_loss, "global_step": global_step}, step=global_step)
 
         self.prompt_model = prompt_model
         
         wandb.finish()
 
-    def generate(self, generation_args, multiplier=20, wandb_args=None):
+    def generate(self, generation_args=None, multiplier=20, wandb_args=None):
         default_generation_args = {
             "max_length": 64,
             "temperature": .9,
@@ -238,26 +246,29 @@ class Augmenter:
         generation_args = generation_args or default_generation_args
 
         default_wandb_args = {
-            project="aslan",
-            entity="broccoliman",
-            job_type="generation",
-            tags=["prefix-tuning", "augmentation"],
-            save_code=True
+            "project": "aslan",
+            "entity": "broccoliman",
+            "job_type": "training",
+            "tags": ["prefix-tuning", "augmentation"],
+            "save_code": True
         }
 
         wandb_args = wandb_args or default_wandb_args
 
+        wandb.init(**wandb_args)
+
+        fakes = []
         steps = 0
-        wandb.log({"total_steps": multiplier * len(condition_dataloader)})
+        wandb.log({"total_steps": multiplier * len(self.condition_dataloader)})
         with torch.inference_mode():
-            with tqdm(total=multiplier * len(condition_dataloader)) as pbar:
+            with tqdm(total=multiplier * len(self.condition_dataloader)) as pbar:
                 for i in range(multiplier):
-                    for inputs in condition_dataloader:
+                    for inputs in self.condition_dataloader:
                         try:
-                            raw = raw_condition[inputs["guid"].item()]
+                            raw = self.raw_condition[inputs["guid"].item()]
                             intent = raw["source_intent"]
                             source_text = raw["source_text"]
-                            fake_text = prompt_model.generate(inputs.cuda(), **generation_arguments)[1][0]
+                            fake_text = self.prompt_model.generate(inputs.cuda(), **generation_args)[1][0]
 
                             fakes.append({
                                 "intent": intent,
@@ -274,9 +285,9 @@ class Augmenter:
             json.dump(fakes, f)
 
         with open("results/comparison.txt", "w") as f:
-            for intent in fshandler.known.unique("intent"):
+            for intent in self.known.unique("intent"):
                 f.write(f"\n\n\n\nINTENT: {intent}\n\n\nREAL ANCHOR\n\n")
-                for row in fshandler.known:
+                for row in self.known:
                     if row["intent"] != intent:
                         continue
                     f.write(f"{row['text']}\n")
@@ -295,7 +306,7 @@ class Augmenter:
         intents = []
 
         for row in fakes:
-            texts.append(row["text"])
+            texts.append(row["fake_text"])
             intents.append(row["intent"])
 
         self.fake_dataset = Dataset.from_dict({"text": texts, "intent": intents})
