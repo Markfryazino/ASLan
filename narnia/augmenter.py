@@ -54,6 +54,9 @@ class Augmenter:
         self.raw_condition = None
         self.prompt_model = None
 
+        self.info = {}
+        self.logs = {}
+
     def init_classlabel(self):
         unique_intents = list(self.known.unique("intent"))
         self.classlabel = ClassLabel(names=unique_intents)
@@ -355,12 +358,34 @@ class Augmenter:
         argsorted_probas = np.argsort(probas, axis=1)[:,::-1]
 
         revealed = self.fake_dataset.map(extract_thoughts, with_indices=True, load_from_cache_file=False)
+        self.info["corrector_revealed"] = revealed
+
+        true_prob_array = np.array(self.info["corrector_revealed"]["true_proba"])
+        self.logs["true_prob_median"] = np.median(true_prob_array)
+        self.logs["true_prob_mean"] = true_prob_array.mean()
+        self.logs["true_prob_filtered_ratio"] = (true_prob_array > threshold).sum() / true_prob_array.shape[0]
+        self.logs["true_prob_filtered_mean"] = true_prob_array[true_prob_array > threshold].mean()
+        self.logs["true_prob_filtered_median"] = np.median(true_prob_array[true_prob_array > threshold])
+
         self.filtered_fakes = revealed.filter(novel_filtering, load_from_cache_file=False)
 
-    def diversify(self, intent_size, model_type="roberta-base"):
+    def diversify(self, intent_size, model_type="roberta-base", wandb_args=None):
+
+        default_wandb_args = {
+            "project": "aslan",
+            "entity": "broccoliman",
+            "job_type": "training",
+            "tags": ["diversify"]
+        }
+
+        wandb_args = wandb_args or default_wandb_args
+        wandb.init(**wandb_args)
+
+        self.logs["diversify"] = {}
+
         aug_fakes_lists = []
         
-        scorer = BERTScorer(model_type=params["model_type"])
+        scorer = BERTScorer(model_type=model_type)
 
         good_texts_by_intent = defaultdict(lambda: [])
         real_texts_by_intent = defaultdict(lambda: [])
@@ -370,6 +395,8 @@ class Augmenter:
 
         for pair in self.known:
             real_texts_by_intent[pair["intent"]].append(pair["text"])
+
+        self.info["diversify"] = {}
 
         for intent in tqdm(self.unique_intents):
             good_texts = good_texts_by_intent[intent]
@@ -392,6 +419,11 @@ class Augmenter:
 
             bad_idxs = []
 
+            self.info["diversify"][intent] = {
+                "R": R.copy(),
+                "R_real": R_real.copy()
+            }
+
             while len(bad_idxs) + intent_size < len(good_texts):
                 R_argmax = R.argmax()
                 R_real_argmax = R_real.argmax()
@@ -409,9 +441,44 @@ class Augmenter:
                 R[:,bad_i] = 0
                 R_real[bad_i,:] = 0
 
-            good_idxs = set(range(len(good_texts))) - set(bad_idxs)
+            good_idxs = list(set(range(len(good_texts))) - set(bad_idxs))
+            self.info["diversify"][intent]["good_idxs"] = good_idxs
+
+            R_cp = self.info["diversify"][intent]["R"]
+            R_real_cp = self.info["diversify"][intent]["R_real"]
+
+            self.logs["diversify"][intent] = {
+                "R_max_mean": R_cp.max(axis=1).mean(),
+                "R_good_max_mean": R_cp[good_idxs, :][:, good_idxs].max(axis=1).mean(),
+                "R_real_max_mean": R_real_cp.max(axis=1).mean(),
+                "R_real_good_max_mean": R_real_cp[good_idxs, :].max(axis=1).mean(),
+                "R_max_median": np.median(R_cp.max(axis=1)),
+                "R_good_max_median": np.median(R_cp[good_idxs, :][:, good_idxs].max(axis=1)),
+                "R_real_max_median": np.median(R_real_cp.max(axis=1)),
+                "R_real_good_max_median": np.median(R_real_cp[good_idxs, :].max(axis=1)),              
+            }
+
             final_texts = [good_texts[i] for i in good_idxs]
-            tmp_dataset = Dataset.from_dict({"text": final_texts, "intent": [intent] * params["intent_size"]})
+            tmp_dataset = Dataset.from_dict({"text": final_texts, "intent": [intent] * intent_size})
             aug_fakes_lists.append(tmp_dataset)
         
+        self.logs.update({
+            "R_good_max_mean": np.mean([self.logs["diversify"][intent]["R_good_max_mean"] for \
+                intent in self.unique_intents]),
+            "R_max_mean": np.mean([self.logs["diversify"][intent]["R_max_mean"] for \
+                intent in self.unique_intents]),
+            "R_real_good_max_mean": np.mean([self.logs["diversify"][intent]["R_real_good_max_mean"] for \
+                intent in self.unique_intents]),
+            "R_real_max_mean": np.mean([self.logs["diversify"][intent]["R_real_max_mean"] for \
+                intent in self.unique_intents])    
+        })
+
+        self.logs.update({
+            "4metric": np.mean([self.logs["R_max_mean"], self.logs["R_real_max_mean"], \
+                self.logs["true_prob_filtered_mean"], self.logs["true_prob_filtered_ratio"]])
+        })
+
         self.aug_fakes = concatenate_datasets(aug_fakes_lists)
+
+        wandb.log(self.logs)
+        wandb.finish()

@@ -135,6 +135,7 @@ class UIDataset(torch.utils.data.Dataset):
         i_id = idx % self.m
         return {
             "text": self.source[u_id]["text"],
+            "true_intent": self.source[u_id]["intent"],
             "intent": self.intents[i_id],
             "label": int(self.source[u_id]["intent"] == self.intents[i_id])
         }
@@ -565,10 +566,17 @@ class FewShotHandler():
         predictions = torch.cat(predictions)[:,1]
         
         correct = 0
+        details = []
         for idx in trange(0, len(self.ui_dataset), self.intent_num):
             current_prediction = torch.argmax(predictions[idx:idx + self.intent_num])
             correct += self.ui_dataset[idx + current_prediction.item()]["label"]
-        return {"accuracy": correct / len(self.unknown)}
+            details.append(self.ui_dataset[idx + current_prediction.item()])
+
+        with open(f"./results/{prefix}_eval_details.json", "w") as f:
+            json.dump(details, f)
+        wandb.save(f"./results/{prefix}_eval_details.json")
+
+        return {"accuracy": correct / len(self.unknown), "details": details}
     
 
     def get_roberta_predictions(self, model, tokenizer, dataset, batch_size, separator, add_intent=False):

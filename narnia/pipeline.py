@@ -271,6 +271,18 @@ def finetune_knn_roberta(fshandler, params):
     return metrics
 
 
+def finetune_entailment_roberta(fshandler, params):
+    block_name = params["block_name"]
+    del params["block_name"]
+    model = fshandler.state["entailment_roberta_model"]
+    tokenizer = fshandler.state["entailment_roberta_tokenizer"]
+
+    model, metrics = laboratory_finetuning(model, tokenizer, fshandler, setup_entailment_roberta, 
+                                           prefix=block_name, params=params)
+    fshandler.state["entailment_roberta_model"] = model
+    return metrics
+
+
 def save_model(state, params):
     model = state[params["model"]]
     tokenizer = state[params["tokenizer"]]
@@ -460,6 +472,19 @@ def evaluate_knn_roberta(fshandler, params):
         fakes = fshandler.state["fake_known"]
 
     eval_result = fshandler.eval_stuu(model, tokenizer, fakes, **settings, setup="roberta")
+    if "verbose" not in params or not params["verbose"]:
+        del eval_result["details"]
+
+    return eval_result
+
+
+def evaluate_entailment_roberta(fshandler, params):
+    model = fshandler.state["entailment_roberta_model"]
+    tokenizer = fshandler.state["entailment_roberta_tokenizer"]
+
+    settings = {key: val for key, val in params.items() if key in ["batch_size", "separator"]}
+
+    eval_result = fshandler.eval_ui(model, tokenizer, fakes, **settings)
     if "verbose" not in params or not params["verbose"]:
         del eval_result["details"]
 
