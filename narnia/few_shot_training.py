@@ -495,7 +495,7 @@ def sbert_training(model, train_data, prefix, eval_data=None, params=None):
     return model, {"eval_score": evaluator(model)}
 
 
-def naive_finetuning(model, tokenizer, known, val_known, unknown, wandb_args, params=None):
+def naive_finetuning(model, tokenizer, known, val_known=None, unknown=None, wandb_args=None, params=None):
     if params is None:
         params = {}
 
@@ -507,8 +507,12 @@ def naive_finetuning(model, tokenizer, known, val_known, unknown, wandb_args, pa
     settings.update(params)
 
     train = TokenizedDataset(known, lambda x: x["text"], tokenizer)
-    val = TokenizedDataset(val_known, lambda x: x["text"], tokenizer)
-    test = TokenizedDataset(unknown, lambda x: x["text"], tokenizer)
+    val = None if val_known is None else TokenizedDataset(val_known, lambda x: x["text"], tokenizer) 
+    test = None if unknown is None else TokenizedDataset(unknown, lambda x: x["text"], tokenizer)
+
+    if val is None:
+        settings["evaluation_strategy"] = "no"
+        settings["save_strategy"] = "no"
 
     trainer = Trainer(
         model=model,
@@ -522,8 +526,12 @@ def naive_finetuning(model, tokenizer, known, val_known, unknown, wandb_args, pa
     trainer.train()
 
     final_metrics = trainer.evaluate(train, metric_key_prefix="train")
-    final_metrics.update(trainer.evaluate(val, metric_key_prefix="eval"))
-    final_metrics.update(trainer.evaluate(test, metric_key_prefix="test"))
+
+    if val is not None:
+        final_metrics.update(trainer.evaluate(val, metric_key_prefix="eval"))
+
+    if test is not None:
+        final_metrics.update(trainer.evaluate(test, metric_key_prefix="test"))
 
     wandb.log(final_metrics)
 

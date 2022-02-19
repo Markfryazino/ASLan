@@ -11,6 +11,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trai
 from transformers.optimization import get_linear_schedule_with_warmup
 from tqdm.auto import tqdm, trange
 from collections import defaultdict
+from inspect import getfullargspec
 
 from openprompt import PromptDataLoader, PromptForGeneration
 from openprompt.data_utils import InputExample
@@ -33,7 +34,7 @@ def evaluate_prompt_model(prompt_model, dataloader):
 
 
 class Augmenter:
-    def __init__(self, known, val_known, unknown):
+    def __init__(self, known, val_known=None, unknown=None):
         self.known = known
         self.val_known = val_known
         self.unknown = unknown
@@ -57,15 +58,21 @@ class Augmenter:
         self.info = {}
         self.logs = {}
 
+        self.config = {}
+
     def init_classlabel(self):
         unique_intents = list(self.known.unique("intent"))
         self.classlabel = ClassLabel(names=unique_intents)
         self.known = self.known.map(lambda x: {"label": self.classlabel.str2int(x["intent"]), **x},
                                     load_from_cache_file=False)
-        self.val_known = self.val_known.map(lambda x: {"label": self.classlabel.str2int(x["intent"]), **x},
+
+        if self.val_known is not None:
+            self.val_known = self.val_known.map(lambda x: {"label": self.classlabel.str2int(x["intent"]), **x},
+                                                load_from_cache_file=False)
+
+        if self.unknown is not None:
+            self.unknown = self.unknown.map(lambda x: {"label": self.classlabel.str2int(x["intent"]), **x},
                                             load_from_cache_file=False)
-        self.unknown = self.unknown.map(lambda x: {"label": self.classlabel.str2int(x["intent"]), **x},
-                                        load_from_cache_file=False)
 
     def init_fakes_from_wandb(self, path):
         api = wandb.Api()
@@ -99,6 +106,11 @@ class Augmenter:
         wandb_args = wandb_args or default_wandb_args
         num_easy_positives = num_easy_positives or self.support_size // 2
 
+        self.config["train_generator"] = {}
+        for param in getfullargspec(self.train_generator)[0]:
+            if param not in ["self", "wandb_args"]:
+                self.config["train_generator"][param] = eval(param)
+
         positive_params = {
             "pair_numbers": {
                 "hard_positive": 0,
@@ -117,7 +129,9 @@ class Augmenter:
         }
 
         raw_train = SBERTDataset(self.known, **positive_params, sbert=sbert_path)
-        raw_test = SBERTDataset(self.val_known, **positive_params, sbert=sbert_path)
+
+        raw_test = None if self.val_known is None else \
+            SBERTDataset(self.val_known, **positive_params, sbert=sbert_path)
         self.raw_condition = SBERTDataset(self.known, **condition_params, sbert=sbert_path)
 
         dataset = {}
@@ -130,14 +144,16 @@ class Augmenter:
                 text_b=val["source_intent"],
             ))
 
-        dataset["validation"] = []
-        for i, val in enumerate(raw_test):
-            dataset["validation"].append(InputExample(
-                guid=i,
-                tgt_text=val["other_text"],
-                text_a=val["source_text"],
-                text_b=val["source_intent"],
-            ))
+        dataset["validation"] = None
+        if raw_test is not None:
+            dataset["validation"] = []
+            for i, val in enumerate(raw_test):
+                dataset["validation"].append(InputExample(
+                    guid=i,
+                    tgt_text=val["other_text"],
+                    text_a=val["source_text"],
+                    text_b=val["source_intent"],
+                ))
 
         dataset["condition"] = []
         for i, val in enumerate(self.raw_condition):
@@ -158,14 +174,16 @@ class Augmenter:
             batch_size=batch_size, shuffle=True, teacher_forcing=True, predict_eos_token=True,
             truncate_method="head")
 
-        validation_dataloader = PromptDataLoader(dataset=dataset["validation"], template=mytemplate, tokenizer=tokenizer, 
-            tokenizer_wrapper_class=WrapperClass, max_seq_length=max_length, decoder_max_length=max_length, 
-            batch_size=batch_size, shuffle=True, teacher_forcing=True, predict_eos_token=True,
-            truncate_method="head")
+        validation_dataloader = None
+        if dataset["validation"] is not None:
+            validation_dataloader = PromptDataLoader(dataset=dataset["validation"], template=mytemplate, 
+                tokenizer=tokenizer, tokenizer_wrapper_class=WrapperClass, max_seq_length=max_length, 
+                decoder_max_length=max_length, batch_size=batch_size, shuffle=True, teacher_forcing=True, 
+                predict_eos_token=True, truncate_method="head")
 
         self.condition_dataloader = PromptDataLoader(dataset=dataset["condition"], template=mytemplate, tokenizer=tokenizer, 
             tokenizer_wrapper_class=WrapperClass, max_seq_length=max_length, decoder_max_length=max_length, 
-            batch_size=1, shuffle=True, teacher_forcing=False, predict_eos_token=True,
+            batch_size=batch_size, shuffle=True, teacher_forcing=False, predict_eos_token=True,
             truncate_method="head")
 
         prompt_model = PromptForGeneration(plm=plm, template=mytemplate, freeze_plm=True, tokenizer=tokenizer, 
@@ -217,7 +235,7 @@ class Augmenter:
                         metrics = {
                             "epoch": epoch,
                             "global_step": global_step,
-                            "train_loss": total_loss / log_num,
+                            "train_loss": total_loss / log_steps,
                             "learning_rate": scheduler.get_last_lr()[0]
                         }
                         wandb.log(metrics, step=global_step)
@@ -227,9 +245,10 @@ class Augmenter:
 
                     pbar.update(1)
 
-                val_loss = evaluate_prompt_model(prompt_model, validation_dataloader)
-                print(f"Epoch {epoch}, validation loss: {val_loss}")
-                wandb.log({"epoch": epoch, "val_loss": val_loss, "global_step": global_step}, step=global_step)
+                if validation_dataloader is not None:
+                    val_loss = evaluate_prompt_model(prompt_model, validation_dataloader)
+                    print(f"Epoch {epoch}, validation loss: {val_loss}")
+                    wandb.log({"epoch": epoch, "val_loss": val_loss, "global_step": global_step}, step=global_step)
 
         self.prompt_model = prompt_model
         
@@ -243,10 +262,14 @@ class Augmenter:
             "top_k": 80,
             "top_p": 0.995,
             "repetition_penalty": 1.0,
-            "bad_words_ids": None
         }
 
         generation_args = generation_args or default_generation_args
+
+        self.config["generate"] = {}
+        for param in getfullargspec(self.generate)[0]:
+            if param not in ["self", "wandb_args"]:
+                self.config["generate"][param] = eval(param)
 
         default_wandb_args = {
             "project": "aslan",
@@ -268,16 +291,19 @@ class Augmenter:
                 for i in range(multiplier):
                     for inputs in self.condition_dataloader:
                         try:
-                            raw = self.raw_condition[inputs["guid"].item()]
-                            intent = raw["source_intent"]
-                            source_text = raw["source_text"]
-                            fake_text = self.prompt_model.generate(inputs.cuda(), **generation_args)[1][0]
+                            fake_texts = self.prompt_model.generate(inputs.cuda(), **generation_args)[1]
 
-                            fakes.append({
-                                "intent": intent,
-                                "source_text": source_text,
-                                "fake_text": fake_text
-                            })
+                            for j, fake in enumerate(fake_texts):
+                                raw = self.raw_condition[inputs["guid"][j].item()]
+                                intent = raw["source_intent"]
+                                source_text = raw["source_text"]
+
+                                fakes.append({
+                                    "intent": intent,
+                                    "source_text": source_text,
+                                    "fake_text": fake
+                                })
+
                             pbar.update(1)
                             wandb.log({"step": steps})
                             steps += 1
@@ -314,7 +340,7 @@ class Augmenter:
 
         self.fake_dataset = Dataset.from_dict({"text": texts, "intent": intents})
 
-    def train_corrector(self, model, training_args=None, wandb_args=None):
+    def train_corrector(self, model="roberta-base", training_args=None, wandb_args=None):
         tokenizer = AutoTokenizer.from_pretrained(model)
         model = AutoModelForSequenceClassification.from_pretrained(model, num_labels=len(self.unique_intents))
 
@@ -324,6 +350,11 @@ class Augmenter:
             "job_type": "training",
             "tags": ["train_corrector"]
         }
+
+        self.config["train_corrector"] = {}
+        for param in getfullargspec(self.train_corrector)[0]:
+            if param not in ["self", "wandb_args"]:
+                self.config["train_corrector"][param] = eval(param)
 
         wandb_args = wandb_args or default_wandb_args
 
@@ -349,6 +380,11 @@ class Augmenter:
 
             return {"pred_intents": ints, "pred_probs": probs, "true_proba": true_proba}
 
+        self.config["correct"] = {}
+        for param in getfullargspec(self.correct)[0]:
+            if param not in ["self", "wandb_args"]:
+                self.config["correct"][param] = eval(param)
+
         fakes_for_correcting = self.fake_dataset.remove_columns(["intent"])
         fakes_tokenized = TokenizedDataset(fakes_for_correcting, lambda x: x["text"], self.corrector_tokenizer)
 
@@ -370,6 +406,11 @@ class Augmenter:
         self.filtered_fakes = revealed.filter(novel_filtering, load_from_cache_file=False)
 
     def diversify(self, intent_size, model_type="roberta-base", wandb_args=None):
+
+        self.config["diversify"] = {}
+        for param in getfullargspec(self.diversify)[0]:
+            if param not in ["self", "wandb_args"]:
+                self.config["diversify"][param] = eval(param)
 
         default_wandb_args = {
             "project": "aslan",
@@ -459,7 +500,7 @@ class Augmenter:
             }
 
             final_texts = [good_texts[i] for i in good_idxs]
-            tmp_dataset = Dataset.from_dict({"text": final_texts, "intent": [intent] * intent_size})
+            tmp_dataset = Dataset.from_dict({"text": final_texts, "intent": [intent] * len(final_texts)})
             aug_fakes_lists.append(tmp_dataset)
         
         self.logs.update({
@@ -473,12 +514,25 @@ class Augmenter:
                 intent in self.unique_intents])    
         })
 
+        self.aug_fakes = concatenate_datasets(aug_fakes_lists)
+
+        checked_texts = set()
+        chosen_texts = set(self.aug_fakes["text"])
+        probs = []
+        for rev in self.info["corrector_revealed"]:
+            if rev["text"] in chosen_texts and rev["text"] not in checked_texts:
+                checked_texts.add(rev["text"])
+                probs.append(rev["true_proba"])
+
         self.logs.update({
-            "4metric": np.mean([self.logs["R_max_mean"], self.logs["R_real_max_mean"], \
-                self.logs["true_prob_filtered_mean"], self.logs["true_prob_filtered_ratio"]])
+            "true_prob_good_mean": np.mean(probs),
+            "true_prob_good_median": np.median(probs)
         })
 
-        self.aug_fakes = concatenate_datasets(aug_fakes_lists)
+        self.logs.update({
+            "3metric": np.mean([self.logs["R_max_mean"] / 2, self.logs["R_real_max_mean"] / 2, \
+                self.logs["true_prob_good_mean"]])
+        })
 
         wandb.log(self.logs)
         wandb.finish()
