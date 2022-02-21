@@ -516,6 +516,30 @@ class Augmenter:
 
         self.aug_fakes = concatenate_datasets(aug_fakes_lists)
 
+        fakes = []
+        for element in self.aug_fakes:
+            fakes.append(element)
+
+        with open("results/fakes.json", "w") as f:
+            json.dump(fakes, f)
+
+        with open("results/comparison.txt", "w") as f:
+            for intent in self.known.unique("intent"):
+                f.write(f"\n\n\n\nINTENT: {intent}\n\n\nREAL ANCHOR\n\n")
+                for row in self.known:
+                    if row["intent"] != intent:
+                        continue
+                    f.write(f"{row['text']}\n")
+
+                f.write(f"\n\nFAKE\n\n")
+                for fake in fakes:
+                    if fake["intent"] != intent:
+                        continue
+                    f.write(f"{fake['text']}\n")
+
+        wandb.save("results/fakes.json")
+        wandb.save("results/comparison.txt")
+
         checked_texts = set()
         chosen_texts = set(self.aug_fakes["text"])
         probs = []
