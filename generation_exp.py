@@ -54,7 +54,7 @@ def main():
     lab.init_data(f"SOAD:v2/CLINC150", -1)
     metrics, fshandler = lab.run(args.state)
 
-    auger = Augmenter(fshandler.known)
+    auger = Augmenter(fshandler.known, state=args.state)
 
     SETTINGS = {
         "train_generator": {
@@ -70,3 +70,7 @@ def main():
 
     auger.train_generator(**SETTINGS["train_generator"])
     auger.generate(**SETTINGS["generate"])
+
+
+if __name__ == "__main__":
+    main()

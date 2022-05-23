@@ -36,10 +36,12 @@ def evaluate_prompt_model(prompt_model, dataloader):
 
 
 class Augmenter:
-    def __init__(self, known, val_known=None, unknown=None):
+    def __init__(self, known, state, val_known=None, unknown=None):
         self.known = known
         self.val_known = val_known
         self.unknown = unknown
+
+        self.state = state
 
         self.classlabel = None
         self.init_classlabel()
@@ -79,9 +81,9 @@ class Augmenter:
     def init_fakes_from_wandb(self, path):
         api = wandb.Api()
         run = api.run(path)
-        f = run.file("results/fakes.json").download(replace=True)
+        f = run.file(f"results/{self.state}-fakes.json").download(replace=True)
 
-        with open("results/fakes.json") as f:
+        with open(f"results/{self.state}-fakes.json") as f:
             fakes = json.load(f)
 
         texts = []
@@ -312,10 +314,10 @@ class Augmenter:
                         except:
                             print("беда...")
 
-        with open("results/fakes.json", "w") as f:
+        with open(f"results/{self.state}-fakes.json", "w") as f:
             json.dump(fakes, f)
 
-        with open("results/comparison.txt", "w") as f:
+        with open(f"results/{self.state}-comparison.txt", "w") as f:
             for intent in self.known.unique("intent"):
                 f.write(f"\n\n\n\nINTENT: {intent}\n\n\nREAL ANCHOR\n\n")
                 for row in self.known:
@@ -329,8 +331,8 @@ class Augmenter:
                         continue
                     f.write(f"{fake['fake_text']}\n")
 
-        wandb.save("results/fakes.json")
-        wandb.save("results/comparison.txt")
+        wandb.save(f"results/{self.state}-fakes.json")
+        wandb.save(f"results/{self.state}-comparison.txt")
         wandb.finish()
 
         texts = []
@@ -514,10 +516,10 @@ class Augmenter:
         for element in self.aug_fakes:
             fakes.append(element)
 
-        with open("results/fakes.json", "w") as f:
+        with open(f"results/{self.state}-fakes.json", "w") as f:
             json.dump(fakes, f)
 
-        with open("results/comparison.txt", "w") as f:
+        with open(f"results/{self.state}-comparison.txt", "w") as f:
             for intent in self.unique_intents:
                 f.write(f"\n\n\n\nINTENT: {intent}\n\n\nREAL ANCHOR\n\n")
                 for row in self.known:
@@ -531,8 +533,8 @@ class Augmenter:
                         continue
                     f.write(f"{fake['text']}\n")
 
-        wandb.save("results/fakes.json")
-        wandb.save("results/comparison.txt")
+        wandb.save(f"results/{self.state}-fakes.json")
+        wandb.save(f"results/{self.state}-comparison.txt")
 
         checked_texts = set()
         chosen_texts = set(self.aug_fakes["text"])

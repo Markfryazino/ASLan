@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=full_exps
-#SBATCH --error=./full_exps.err
-#SBATCH --output=./full_exps.log
+#SBATCH --job-name=gen_exp
+#SBATCH --error=./gen_exp.err
+#SBATCH --output=./gen_exp.log
 #SBATCH --time=10-0:0
 #SBATCH --cpus-per-task=4
 #SBATCH --gpus=1
