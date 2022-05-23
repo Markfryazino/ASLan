@@ -14,8 +14,8 @@ module load Python/Anaconda_v11.2020
 source deactivate
 source activate nlp
 
-declare -a idxs=(0 1 2 3 4)
+declare -a idxs=(0 1 2)
 for idx in "${idxs[@]}"
 do
-    python ./generation_exp.py --size 10 --state $idx
+    python ./filtration_exp.py --size 10 --state $idx --out_size 10 --fake_path results
 done

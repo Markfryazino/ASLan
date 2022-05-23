@@ -54,7 +54,7 @@ def main():
     lab.init_data(f"SOAD:v2/CLINC150", -1)
     metrics, fshandler = lab.run(args.state)
 
-    auger = Augmenter(fshandler.known, state=args.state)
+    auger = Augmenter(fshandler.known, state=args.state, results_path=f"gen_results-size-{args.size}")
 
     SETTINGS = {
         "train_generator": {
@@ -64,7 +64,7 @@ def main():
             "sbert_path": "../data/all-mpnet-base-v2"
         },
         "generate": {
-            "multiplier": 25,
+            "multiplier": 10,
         },
     }
 
