@@ -12,6 +12,8 @@ from transformers.optimization import get_linear_schedule_with_warmup
 from tqdm.auto import tqdm, trange
 from collections import defaultdict
 from inspect import getfullargspec
+from sklearn.cluster import SpectralClustering
+from scipy.special import softmax
 
 from openprompt import PromptDataLoader, PromptForGeneration
 from openprompt.data_utils import InputExample
@@ -405,7 +407,7 @@ class Augmenter:
 
         self.filtered_fakes = revealed.filter(novel_filtering, load_from_cache_file=False)
 
-    def diversify(self, intent_size, model_type="roberta-base", wandb_args=None):
+    def diversify(self, intent_size, temperature=0.05, model_type="roberta-base", num_layers=10, wandb_args=None):
 
         self.config["diversify"] = {}
         for param in getfullargspec(self.diversify)[0]:
@@ -426,7 +428,7 @@ class Augmenter:
 
         aug_fakes_lists = []
         
-        scorer = BERTScorer(model_type=model_type)
+        scorer = BERTScorer(model_type=model_type, num_layers=num_layers)
 
         good_texts_by_intent = defaultdict(lambda: [])
         real_texts_by_intent = defaultdict(lambda: [])
@@ -455,38 +457,30 @@ class Augmenter:
             R = R.reshape((len(good_texts), len(good_texts)))
             R_real = R_real.reshape((len(good_texts), len(real_texts)))
             R = R.numpy()
-            np.fill_diagonal(R, 0)
             R_real = R_real.numpy()
-
-            bad_idxs = []
 
             self.info["diversify"][intent] = {
                 "R": R.copy(),
                 "R_real": R_real.copy()
             }
 
-            while len(bad_idxs) + intent_size < len(good_texts):
-                R_argmax = R.argmax()
-                R_real_argmax = R_real.argmax()
+            y = SpectralClustering(assign_labels='kmeans', affinity="precomputed", 
+                                   n_clusters=intent_size).fit_predict(R)
+            real_dists = R_real.max(axis=1)
 
-                i = R_argmax // R.shape[1]
-                j = R_argmax % R.shape[1]
+            good_idxs = []
 
-                i_real = R_real_argmax // R_real.shape[1]
-                j_real = R_real_argmax % R_real.shape[1]
+            for cl in range(intent_size):
+                idxs = np.where(y == cl)[0]
+                p = softmax(real_dists[idxs] / temperature)
+                idx = np.random.choice(idxs, p=p)
+                good_idxs.append(idx)
 
-                bad_i = i if R[i, j] > R_real[i_real, j_real] else i_real
-                bad_idxs.append(bad_i)
-
-                R[bad_i,:] = 0
-                R[:,bad_i] = 0
-                R_real[bad_i,:] = 0
-
-            good_idxs = list(set(range(len(good_texts))) - set(bad_idxs))
             self.info["diversify"][intent]["good_idxs"] = good_idxs
 
             R_cp = self.info["diversify"][intent]["R"]
             R_real_cp = self.info["diversify"][intent]["R_real"]
+            np.fill_diagonal(R_cp, 0)
 
             self.logs["diversify"][intent] = {
                 "R_max_mean": R_cp.max(axis=1).mean(),
@@ -524,7 +518,7 @@ class Augmenter:
             json.dump(fakes, f)
 
         with open("results/comparison.txt", "w") as f:
-            for intent in self.known.unique("intent"):
+            for intent in self.unique_intents:
                 f.write(f"\n\n\n\nINTENT: {intent}\n\n\nREAL ANCHOR\n\n")
                 for row in self.known:
                     if row["intent"] != intent:
