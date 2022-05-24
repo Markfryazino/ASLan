@@ -89,7 +89,7 @@ def main():
     lab.init_data(f"SOAD:v2/CLINC150", -1)
     metrics, fshandler = lab.run(args.state)
 
-    auger = Augmenter(fshandler.known, state=args.state, results_path=f"filtered-size-{args.size}")
+    auger = Augmenter(fshandler.known, state=args.state, results_path=f"filtered-size-{args.size}to{args.out_size}")
     auger.fake_dataset = get_fakes(args.fake_path, fshandler, args.state)
 
     SETTINGS = {

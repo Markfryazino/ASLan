@@ -4,6 +4,7 @@ import json
 
 import numpy as np
 
+from pathlib import Path
 from bert_score import score, BERTScorer
 from datasets import ClassLabel, Dataset, concatenate_datasets
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, \
@@ -42,6 +43,7 @@ class Augmenter:
         self.unknown = unknown
 
         self.results = results_path
+        Path(self.results).mkdir(parents=True, exist_ok=True)
         self.state = state
 
         self.classlabel = None
@@ -267,7 +269,6 @@ class Augmenter:
             "top_k": 80,
             "top_p": 0.995,
             "repetition_penalty": 1.0,
-            "num_return_sequences": 4
         }
 
         generation_args = generation_args or default_generation_args

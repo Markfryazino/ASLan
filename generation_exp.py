@@ -64,7 +64,7 @@ def main():
             "sbert_path": "../data/all-mpnet-base-v2"
         },
         "generate": {
-            "multiplier": 10,
+            "multiplier": 25,
         },
     }
 
