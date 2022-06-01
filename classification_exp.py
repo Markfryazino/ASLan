@@ -113,7 +113,7 @@ def main():
     }
 
     run = wandb.init(project="aslan",
-                    tags=["hpc", "no-fakes", f"state-{args.state}", args.model],
+                    tags=["hpc", "no-fakes", f"state-{args.state}", args.model, args.fake_path],
                     job_type="training")
 
     training_args = TrainingArguments(
@@ -160,7 +160,7 @@ def main():
     test = TokenizedDataset(fshandler.unknown, lambda x: x["text"], tokenizer)
 
     run = wandb.init(project="aslan",
-                    tags=["hpc", "with-fakes", f"state-{args.state}", args.model],
+                    tags=["hpc", "with-fakes", f"state-{args.state}", args.model, args.fake_path],
                     job_type="training")
 
     training_args = TrainingArguments(

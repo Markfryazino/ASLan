@@ -469,13 +469,18 @@ class Augmenter:
                 "R_real": R_real.copy()
             }
 
+            if R.shape[0] < intent_size:
+                print(f"{intent_size} is less than {R.shape[0]}")
+
+            true_intent_size = min(intent_size, R.shape[0])
+
             y = SpectralClustering(assign_labels='kmeans', affinity="precomputed", 
-                                   n_clusters=intent_size).fit_predict(R)
+                                   n_clusters=true_intent_size).fit_predict(R)
             real_dists = R_real.max(axis=1)
 
             good_idxs = []
 
-            for cl in range(intent_size):
+            for cl in range(true_intent_size):
                 idxs = np.where(y == cl)[0]
                 p = softmax(real_dists[idxs] / temperature)
                 idx = np.random.choice(idxs, p=p)

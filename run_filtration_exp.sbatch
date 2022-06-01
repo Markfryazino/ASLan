@@ -17,5 +17,5 @@ source activate nlp
 declare -a idxs=(0 1 2 3 4)
 for idx in "${idxs[@]}"
 do
-    python ./filtration_exp.py --size 10 --state $idx --out_size 50 --fake_path results
+    python ./filtration_exp.py --size 10 --state $idx --out_size 30 --fake_path gen_results-size-10-banking77
 done
