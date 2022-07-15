@@ -23,6 +23,7 @@ from openprompt.prompts.prefix_tuning_template import PrefixTuningTemplate
 
 from few_shot_training import naive_finetuning
 from environment import TokenizedDataset, T5TokenizedDataset, SBERTDataset
+from eda import eda_augment
 
 
 def evaluate_prompt_model(prompt_model, dataloader):
@@ -261,6 +262,26 @@ class Augmenter:
         
         wandb.finish()
 
+    def eda(self, multiplier=20):
+        fakes = eda_augment(self.known, multiplier)
+
+        with open(f"{self.results}/{self.state}-fakes.json", "w") as f:
+            json.dump(fakes, f)
+
+        with open(f"{self.results}/{self.state}-comparison.txt", "w") as f:
+            for intent in self.known.unique("intent"):
+                f.write(f"\n\n\n\nINTENT: {intent}\n\n\nREAL ANCHOR\n\n")
+                for row in self.known:
+                    if row["intent"] != intent:
+                        continue
+                    f.write(f"{row['text']}\n")
+
+                f.write(f"\n\nFAKE\n\n")
+                for fake in fakes:
+                    if fake["intent"] != intent:
+                        continue
+                    f.write(f"{fake['text']}\n")
+
     def generate(self, generation_args=None, multiplier=20, wandb_args=None):
         default_generation_args = {
             "max_length": 64,
@@ -429,7 +450,7 @@ class Augmenter:
         wandb_args = wandb_args or default_wandb_args
         wandb.init(**wandb_args)
 
-        self.logs["diversify"] = {}
+        self.logs["diversify"] = defaultdict(lambda: defaultdict(float))
 
         aug_fakes_lists = []
         
@@ -444,10 +465,14 @@ class Augmenter:
         for pair in self.known:
             real_texts_by_intent[pair["intent"]].append(pair["text"])
 
-        self.info["diversify"] = {}
+        self.info["diversify"] = defaultdict(lambda: defaultdict(float))
 
         for intent in tqdm(self.unique_intents):
             good_texts = good_texts_by_intent[intent]
+
+            if len(good_texts) == 0:
+                continue
+
             real_texts = real_texts_by_intent[intent]
 
             left_good_texts = np.array(good_texts).repeat(len(good_texts)).tolist()
@@ -474,17 +499,21 @@ class Augmenter:
 
             true_intent_size = min(intent_size, R.shape[0])
 
-            y = SpectralClustering(assign_labels='kmeans', affinity="precomputed", 
-                                   n_clusters=true_intent_size).fit_predict(R)
-            real_dists = R_real.max(axis=1)
+            if R.shape[0] == 1:
+                good_idxs = [0]
 
-            good_idxs = []
+            else:
+                y = SpectralClustering(assign_labels='kmeans', affinity="precomputed", 
+                                    n_clusters=true_intent_size).fit_predict(R)
+                real_dists = R_real.max(axis=1)
 
-            for cl in range(true_intent_size):
-                idxs = np.where(y == cl)[0]
-                p = softmax(real_dists[idxs] / temperature)
-                idx = np.random.choice(idxs, p=p)
-                good_idxs.append(idx)
+                good_idxs = []
+
+                for cl in range(true_intent_size):
+                    idxs = np.where(y == cl)[0]
+                    p = softmax(real_dists[idxs] / temperature)
+                    idx = np.random.choice(idxs, p=p)
+                    good_idxs.append(idx)
 
             self.info["diversify"][intent]["good_idxs"] = good_idxs
 

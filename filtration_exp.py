@@ -86,11 +86,11 @@ def main():
         params={},
         root_path="../data")
 
-    lab.init_data(f"SOAD:v2/BANKING77", -1)
+    lab.init_data(f"SOAD:v2/HWU64", -1)
     metrics, fshandler = lab.run(args.state)
 
     auger = Augmenter(fshandler.known, state=args.state,
-                      results_path=f"filtered-size-{args.size}to{args.out_size}-banking77")
+                      results_path=f"filtered-size-{args.size}to{args.out_size}-hwu64")
     auger.fake_dataset = get_fakes(args.fake_path, fshandler, args.state)
 
     SETTINGS = {

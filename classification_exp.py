@@ -36,6 +36,12 @@ def parse_args():
         required=True,
     )
 
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        required=True,
+    )
+
     return parser.parse_args()
 
 
@@ -56,6 +62,8 @@ def get_fakes(path, state):
 
 def main():
     args = parse_args()
+
+    print(args.model)
 
     os.environ["OFFLINE"] = "True"
     os.environ["WANDB_MODE"] = "offline"
@@ -83,7 +91,7 @@ def main():
         params={},
         root_path="../data")
 
-    lab.init_data(f"SOAD:v2/CLINC150", -1)
+    lab.init_data(f"SOAD:v2/{args.dataset.upper()}", -1)
     metrics, fshandler = lab.run(args.state)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
@@ -134,7 +142,7 @@ def main():
         **config
     )
 
-    model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=150)
+    model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=fshandler.intent_num)
 
     trainer = Trainer(
         model=model,
@@ -181,7 +189,7 @@ def main():
         **config
     )
 
-    model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=150)
+    model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=fshandler.intent_num)
 
     trainer = Trainer(
         model=model,

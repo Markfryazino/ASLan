@@ -19,6 +19,12 @@ def parse_args():
         required=True,
     )
 
+    parser.add_argument(
+        "--inflation",
+        type=int,
+        required=True,
+    )
+
     return parser.parse_args()
 
 
@@ -54,22 +60,9 @@ def main():
     lab.init_data(f"SOAD:v2/HWU64", -1)
     metrics, fshandler = lab.run(args.state)
 
-    auger = Augmenter(fshandler.known, state=args.state, results_path=f"gen_results-size-{args.size}-hwu64")
-
-    SETTINGS = {
-        "train_generator": {
-            "t5_path": "../data/T0_3B",
-            "num_train_epochs": 3,
-            "prefix_length": 20,
-            "sbert_path": "../data/all-mpnet-base-v2"
-        },
-        "generate": {
-            "multiplier": 50,
-        },
-    }
-
-    auger.train_generator(**SETTINGS["train_generator"])
-    auger.generate(**SETTINGS["generate"])
+    result_path = f"eda-size-{args.size}to{args.size * args.inflation}-hwu64"
+    auger = Augmenter(fshandler.known, state=args.state, results_path=result_path)
+    auger.eda(multiplier=args.inflation)
 
 
 if __name__ == "__main__":
